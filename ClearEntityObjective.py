@@ -1,3 +1,4 @@
+from Cell import Cell
 from Objective import Objective
 
 
@@ -18,10 +19,10 @@ class ClearEntityObjective(Objective):
         for r in range(board.rows):
             for c in range(board.cols):
                 cell = board.get_board_element(r, c)
-
-                for entity in (cell.overlay, cell.occupant, cell.underlay):
-                    if isinstance(entity, self.entity_type):
-                        count += 1
+                if isinstance(cell, Cell):
+                    for entity in (cell.overlay, cell.occupant, cell.underlay):
+                        if isinstance(entity, self.entity_type):
+                            count += 1
         self.count = count
 
     def __str__(self):

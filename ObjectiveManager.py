@@ -5,7 +5,6 @@ class ObjectiveManager:
     def add_objective(self, objective):
         self.objectives.append(objective)
 
-    # 🔔 called by Cell
     def on_entity_cleared(self, entity):
         for obj in self.objectives:
             obj.on_event(entity)

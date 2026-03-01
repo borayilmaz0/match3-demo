@@ -1,5 +1,8 @@
 from BasicDamageable import BasicDamageable
 from BoardElement import BoardElement
+from CellOccupant import CellOccupant
+from CellOverlay import CellOverlay
+from CellUnderlay import CellUnderlay
 from DamageContext import DamageContext
 from DamageReflecting import DamageReflecting
 from Damageable import Damageable
@@ -9,12 +12,12 @@ from CellEntityClearedEvent import CellEntityClearedEvent
 
 
 class Cell(BoardElement):
-    __slots__ = ("occupant", "overlay", "underlay")
+    __slots__ = ("occupant", "overlay", "underlay", "_listeners")
 
-    def __init__(self):
-        self.occupant = None
-        self.overlay = None
-        self.underlay = None
+    def __init__(self, occupant: CellOccupant = None, overlay: CellOverlay = None, underlay: CellUnderlay = None, _listeners: list = None):
+        self.occupant = occupant
+        self.overlay = overlay
+        self.underlay = underlay
         self._listeners = []
 
     def add_listener(self, listener):

@@ -27,3 +27,6 @@ class GapCell(BoardElement):
 
     def _remove_entity(self, entity):
         ...
+
+    def add_listener(self, listener):
+        ...
