@@ -149,7 +149,7 @@ class SpecialActivationLogic:
             for rr in range(self.board.rows):
                 self._apply_enhanced_damage(rr, c)
 
-        self._destroy_self(pos)
+        self._apply_enhanced_damage(pos[0], pos[1])
 
     def _bomb(self, pos):
         r, c = pos
@@ -157,7 +157,7 @@ class SpecialActivationLogic:
             for dc in range(-2, 3):
                 self._apply_enhanced_damage(r + dr, c + dc)
 
-        self._destroy_self(pos)
+        self._apply_enhanced_damage(pos[0], pos[1])
 
     def _propeller(self, pos, pre_damage):
         r, c = pos
@@ -166,7 +166,7 @@ class SpecialActivationLogic:
             for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 self._apply_enhanced_damage(r + dr, c + dc)
 
-        self._destroy_self(pos)
+        self._apply_enhanced_damage(pos[0], pos[1])
 
         target = self._find_random_valid_target()
         if target:
@@ -187,7 +187,7 @@ class SpecialActivationLogic:
                         DamageContext(DamageType.MATCH, color=color)
                     )
 
-        self._destroy_self(pos)
+        self._apply_enhanced_damage(pos[0], pos[1])
 
     # ============================================================
     # COMBO IMPLEMENTATIONS
@@ -199,8 +199,8 @@ class SpecialActivationLogic:
         Centered on pos_b (the 'swapped-into' position)
         """
         # destroy both originals
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         r, c = pos_b
 
@@ -218,8 +218,8 @@ class SpecialActivationLogic:
         Centered on pos_b
         """
         # destroy both originals
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         r, c = pos_b
 
@@ -236,8 +236,8 @@ class SpecialActivationLogic:
         _apply_enhanced_damage safely ignores invalid cells.
         """
         # destroy both originals
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         center_r, center_c = pos_b
 
@@ -263,8 +263,8 @@ class SpecialActivationLogic:
         self._propeller_neighbor_damage(pos_b)
 
         # 2) destroy both originals
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         # 3) fly to random target
         target = self._find_random_valid_target()
@@ -281,8 +281,8 @@ class SpecialActivationLogic:
         """
         self._propeller_neighbor_damage(pos_b)
 
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         target = self._find_random_valid_target()
         if not target:
@@ -298,8 +298,8 @@ class SpecialActivationLogic:
         """
         self._propeller_neighbor_damage(pos_b)
 
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         target = self._find_random_valid_target()
         if not target:
@@ -321,8 +321,8 @@ class SpecialActivationLogic:
         self._propeller_neighbor_damage(pos_b)
 
         # 2) destroy both originals
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         # 3) fly three independent propellers
         for _ in range(3):
@@ -345,7 +345,7 @@ class SpecialActivationLogic:
         other_pos = pos_b if light_pos == pos_a else pos_a
 
         # destroy the non-light-ball special
-        self._destroy_self(other_pos)
+        self._apply_enhanced_damage(other_pos[0], other_pos[1])
 
         target_color = random.choice(list(self.board.color_set))
 
@@ -369,7 +369,7 @@ class SpecialActivationLogic:
                     self._apply_enhanced_damage(rr, c)
 
             # destroy rocket after activation
-            self._destroy_self((r, c))
+            self._apply_enhanced_damage(r, c)
 
     def _combo_light_ball_bomb(self, pos_a, pos_b, candy_a, candy_b):
         """
@@ -385,7 +385,7 @@ class SpecialActivationLogic:
         other_pos = pos_b if light_pos == pos_a else pos_a
 
         # destroy the non-light-ball special
-        self._destroy_self(other_pos)
+        self._apply_enhanced_damage(other_pos[0], other_pos[1])
 
         target_color = random.choice(list(self.board.color_set))
 
@@ -408,7 +408,7 @@ class SpecialActivationLogic:
 
         # destroy all bombs after explosion
         for r, c in bomb_centers:
-            self._destroy_self((r, c))
+            self._apply_enhanced_damage(r, c)
 
     def _combo_light_ball_propeller(self, pos_a, pos_b, candy_a, candy_b):
         """
@@ -426,7 +426,7 @@ class SpecialActivationLogic:
         other_pos = pos_b if light_pos == pos_a else pos_a
 
         # destroy the propeller
-        self._destroy_self(other_pos)
+        self._apply_enhanced_damage(other_pos[0], other_pos[1])
 
         target_color = random.choice(list(self.board.color_set))
 
@@ -446,7 +446,7 @@ class SpecialActivationLogic:
                 self._apply_enhanced_damage(*target)
 
             # destroy propeller after action
-            self._destroy_self((r, c))
+            self._apply_enhanced_damage(r, c)
 
     def _combo_light_ball_light_ball(self, pos_a, pos_b, candy_a, candy_b):
         """
@@ -455,8 +455,8 @@ class SpecialActivationLogic:
         - Apply exactly ONE enhanced damage to every valid cell
         """
         # destroy both light balls
-        self._destroy_self(pos_a)
-        self._destroy_self(pos_b)
+        self._apply_enhanced_damage(pos_a[0], pos_a[1])
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
 
         for r in range(self.board.rows):
             for c in range(self.board.cols):
@@ -497,17 +497,6 @@ class SpecialActivationLogic:
         for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             self._apply_enhanced_damage(r + dr, c + dc)
 
-    def _destroy_self(self, pos):
-        r, c = pos
-        if not self.board.can_cell_hold_occupant(r, c):
-            return
-
-        cell = self.board.get_board_element(r, c)
-        if cell.occupant:
-            cell.apply_damage(
-                DamageContext(DamageType.ENHANCED)
-            )
-
     def _find_random_valid_target(self):
         candidates = []
         for r in range(self.board.rows):
@@ -519,9 +508,3 @@ class SpecialActivationLogic:
                     candidates.append((r, c))
 
         return random.choice(candidates) if candidates else None
-
-    def _fly_propeller_once(self):
-        target = self._find_random_valid_target()
-        if target:
-            self._apply_enhanced_damage(*target)
-

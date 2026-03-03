@@ -81,7 +81,7 @@ class LevelLogic:
 
                 return "swap", [(r, c), (r2, c2)]
 
-        except Exception:
+        except ValueError:
             return "invalid", None
 
         return "invalid", None

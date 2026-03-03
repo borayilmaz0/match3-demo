@@ -32,16 +32,6 @@ class Candy(CellOccupant):
             )
         )
 
-        # ----- special candy overrides -----
-        self._configure_by_type()
-
-    def _configure_by_type(self):
-        """
-        Modify or replace behaviors depending on candy type.
-        This is intentionally simple for now.
-        """
-        return
-
     def is_special(self) -> bool:
         return self.type != CandyType.NORMAL
 

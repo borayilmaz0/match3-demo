@@ -6,22 +6,23 @@ from CellUnderlay import CellUnderlay
 from DamageContext import DamageContext
 from DamageReflecting import DamageReflecting
 from Damageable import Damageable
+from GameEvents import EntityClearedEvent
 from MatchBlocking import MatchBlocking
 from Swappable import Swappable
 from CellEntityClearedEvent import CellEntityClearedEvent
 
 
 class Cell(BoardElement):
-    __slots__ = ("occupant", "overlay", "underlay", "_listeners")
+    __slots__ = ("occupant", "overlay", "underlay", "_event_bus")
 
-    def __init__(self, occupant: CellOccupant = None, overlay: CellOverlay = None, underlay: CellUnderlay = None, _listeners: list = None):
+    def __init__(self, occupant: CellOccupant = None, overlay: CellOverlay = None, underlay: CellUnderlay = None, event_bus = None):
         self.occupant = occupant
         self.overlay = overlay
         self.underlay = underlay
-        self._listeners = []
+        self._event_bus = event_bus
 
-    def add_listener(self, listener):
-        self._listeners.append(listener)
+    def set_event_bus(self, event_bus) -> None:
+        self._event_bus = event_bus
 
     def __str__(self):
         return f"{str(self.occupant):>17}|{str(self.overlay)[:5]}|{str(self.underlay)[:5]}"
@@ -96,14 +97,14 @@ class Cell(BoardElement):
 
     # ---------- helpers ----------
 
-    def _remove_entity(self, entity):
+    def _remove_entity(self, entity) -> None:
         if entity is self.overlay:
             self.overlay = None
         elif entity is self.occupant:
-            self.occupant = None  # ✅ FIX
+            self.occupant = None
         elif entity is self.underlay:
-            self.underlay = None  # ✅ FIX
+            self.underlay = None
 
-        # 🔔 notify listeners AFTER removal
-        for listener in self._listeners:
-            listener.on_entity_cleared(entity)
+        # Notify via EventBus — decoupled from objectives, UI, audio, etc.
+        if self._event_bus is not None:
+            self._event_bus.emit(EntityClearedEvent(entity))

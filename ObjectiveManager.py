@@ -1,3 +1,6 @@
+from GameEvents import EntityClearedEvent
+
+
 class ObjectiveManager:
     def __init__(self):
         self.objectives = []
@@ -5,9 +8,10 @@ class ObjectiveManager:
     def add_objective(self, objective):
         self.objectives.append(objective)
 
-    def on_entity_cleared(self, entity):
+    def on_entity_cleared(self, event: EntityClearedEvent) -> None:
+        """Called by the EventBus whenever a Cell removes an entity."""
         for obj in self.objectives:
-            obj.on_event(entity)
+            obj.on_event(event.entity)
 
     def start(self, board):
         for obj in self.objectives:
