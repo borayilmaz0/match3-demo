@@ -1,7 +1,7 @@
 import random
 
 from Board import Board
-from Candy import Candy
+from Candy import Candy, NormalCandy
 from CandyType import CandyType
 
 
@@ -113,4 +113,4 @@ class BoardDesigner:
         if not choices:
             raise RuntimeError("No valid colors available during initialization")
 
-        self.board.get_board_element(r, c).occupant = Candy(random.choice(tuple(choices)))
+        self.board.get_board_element(r, c).occupant = NormalCandy(random.choice(tuple(choices)))

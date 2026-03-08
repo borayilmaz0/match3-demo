@@ -65,6 +65,9 @@ class GameLogic:
         # 1️⃣ Evaluate both pivots independently
         # ------------------------------------------------------------
         for pos in pivots:
+            if combo_handled:
+                continue
+
             r, c = pos
             candy = self.board.get_occupant(r, c)
 
@@ -75,9 +78,6 @@ class GameLogic:
                 result = self.match_logic.find_best_match(match, pivot)
                 if result:
                     pending_match_results.append(result)
-
-            if combo_handled:
-                continue
 
             # --- special swap activation ---
             if isinstance(candy, Candy) and candy.type != CandyType.NORMAL:
@@ -108,6 +108,7 @@ class GameLogic:
         # ------------------------------------------------------------
         for result in pending_match_results:
             self.damage_logic.apply_match_result(result)
+            #
             if result.spawn_candy:
                 self.board.get_board_element(*result.spawn_pos).occupant = (
                     self.spawn_logic.spawn_custom_candy(
@@ -153,7 +154,8 @@ class GameLogic:
 
     def _resolve_cascade(self):
         """
-        Runs cascade + spawn until board is stable.
+        Runs a column-wise settle loop until the board is stable.
+        Gravity resolves first, then only valid top-entry slots are spawned.
         """
         while True:
             moved = self.cascade_logic.apply()
@@ -171,29 +173,29 @@ class GameLogic:
         combo = 0
         policy = CascadePivotPolicy()
 
-        while True:
-            all_matches = self.md_logic.collect_all_matches()
-            if not all_matches:
-                break
+        all_matches = self.md_logic.collect_all_matches()
+        if not all_matches:
+            return
 
-            combo += 1
-            print(f"combo {combo}")
+        combo += 1
+        print(f"combo {combo}")
 
-            match_results = self.match_logic.resolve_matches(all_matches, policy)
-            for result in match_results:
-                print(
-                    "match result:", result.cells_to_remove, result.spawn_candy
-                    if result.spawn_candy is not None else None,
-                    result.spawn_pos if result.spawn_pos is not None else None)
+        match_results = self.match_logic.resolve_matches(all_matches, policy)
+        for result in match_results:
+            print(
+                "match result:", result.cells_to_remove, result.spawn_candy
+                if result.spawn_candy is not None else None,
+                result.spawn_pos if result.spawn_pos is not None else None)
 
-            for result in match_results:
-                self.damage_logic.apply_match_result(result)
+        for result in match_results:
+            self.damage_logic.apply_match_result(result)
 
-                if result.spawn_candy:
-                    self.board.get_board_element(*result.spawn_pos).occupant = (
-                        result.spawn_candy
-                    )
+            if result.spawn_candy:
+                self.board.get_board_element(*result.spawn_pos).occupant = (
+                    result.spawn_candy
+                )
 
-            print(f"after resolve combo:\n{self.board}")
+        print(f"after resolve combo:\n{self.board}")
 
-            self._resolve_cascade()
+        self._resolve_cascade()
+        self._resolve_combos()

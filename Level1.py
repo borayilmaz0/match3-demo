@@ -7,7 +7,7 @@ from GapCell import GapCell
 from Level import Level
 from ColorType import ColorType
 from ClearEntityObjective import ClearEntityObjective
-from Candy import Candy
+from Candy import Candy, RocketHCandy, BombCandy, LightBallCandy, PropellerCandy
 from Snow import Snow
 from Vines import Vines
 
@@ -17,20 +17,20 @@ class Level1(Level):
         super().__init__()
         self.color_set = [ColorType.RED, ColorType.BLUE, ColorType.GREEN, ColorType.YELLOW]
         self.moves = 20
-        """self.layout = [
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), GapCell(), GapCell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-        ]"""
         self.layout = [
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()]
+        ]
+        """self.layout = [
             [Cell(), Cell(), Cell()],
             [Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell()]]
+            [Cell(), Cell(), Cell()]]"""
         self.rows = len(self.layout)
         self.cols = len(self.layout[0])
 
@@ -39,12 +39,16 @@ class Level1(Level):
 
     def set_objectives(self):
         self.layout[0][0] = Cell(
-            occupant=Candy(ColorType.YELLOW, CandyType.ROCKET_H),
+            occupant=RocketHCandy(ColorType.YELLOW),
             overlay=Vines(),
             underlay=Snow(),
         )
 
-        self.layout[0][1] = Cell(
-            occupant=Candy(ColorType.YELLOW, CandyType.ROCKET_H))
+        self.layout[4][1] = Cell(
+            occupant=LightBallCandy(ColorType.YELLOW))
+
+        self.layout[4][2] = Cell(
+            occupant=PropellerCandy(ColorType.YELLOW))
+
 
         self.objectives = [ClearEntityObjective(Vines), ClearEntityObjective(Snow)]

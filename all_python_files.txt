@@ -122,13 +122,14 @@ import random
 from DamageContext import DamageContext
 from DamageType import DamageType
 from CandyType import CandyType
-from Candy import Candy
+from Candy import Candy, CandyFactory
 
 
 class SpecialActivationLogic:
     def __init__(self, board, damage_logic):
         self.board = board
         self.damage_logic = damage_logic
+        self._impacted_columns = set()
 
         # ------------------------------------------------------------
         # Handler registries
@@ -209,6 +210,7 @@ class SpecialActivationLogic:
     # ============================================================
 
     def activate_on_swap(self, pos, candy, neighbor_candy):
+        self._impacted_columns.clear()
         if candy is None:
             return False
 
@@ -216,11 +218,11 @@ class SpecialActivationLogic:
         if handler is None:
             return False
 
-        result = handler(pos, candy, neighbor_candy)
-        # Light ball returns bool; others return None
-        return True if result is None else bool(result)
+        handler(pos, candy, neighbor_candy)
+        return True
 
     def activate_on_hit(self, pos, candy):
+        self._impacted_columns.clear()
         if candy is None:
             return False
 
@@ -248,6 +250,7 @@ class SpecialActivationLogic:
         return (candy_a.type, candy_b.type) in self._combo_handlers_ordered
 
     def activate_combo_on_swap(self, pos_a, pos_b, candy_a, candy_b) -> bool:
+        self._impacted_columns.clear()
         if not self.can_activate_combo_on_swap(candy_a, candy_b):
             return False
 
@@ -303,6 +306,7 @@ class SpecialActivationLogic:
                     continue
 
                 if cell.occupant.color == color:
+                    self._mark_impacted(r, c)
                     cell.apply_damage(
                         DamageContext(DamageType.MATCH, color=color)
                     )
@@ -472,7 +476,7 @@ class SpecialActivationLogic:
         rocket_positions = []
         for r, c in self._collect_normal_candies_of_color(target_color):
             new_type = random.choice([CandyType.ROCKET_H, CandyType.ROCKET_V])
-            self.board.get_board_element(r, c).occupant = Candy(target_color, new_type)
+            self.board.get_board_element(r, c).occupant = CandyFactory.create(new_type, target_color)
             rocket_positions.append((r, c))
 
         # trigger rockets sequentially
@@ -511,7 +515,7 @@ class SpecialActivationLogic:
 
         bomb_centers = []
         for r, c in self._collect_normal_candies_of_color(target_color):
-            self.board.get_board_element(r, c).occupant = Candy(target_color, CandyType.BOMB)
+            self.board.get_board_element(r, c).occupant = CandyFactory.create(CandyType.BOMB, target_color)
             bomb_centers.append((r, c))
 
         # collect affected cells (set prevents stacking)
@@ -552,7 +556,7 @@ class SpecialActivationLogic:
 
         prop_positions = []
         for r, c in self._collect_normal_candies_of_color(target_color):
-            self.board.get_board_element(r, c).occupant = Candy(target_color, CandyType.PROPELLER)
+            self.board.get_board_element(r, c).occupant = CandyFactory.create(CandyType.PROPELLER, target_color)
             prop_positions.append((r, c))
 
         # activate propellers one by one
@@ -588,9 +592,6 @@ class SpecialActivationLogic:
     # ============================================================
 
     def _swap_light_ball(self, pos, candy, neighbor_candy) -> bool:
-        if not isinstance(neighbor_candy, Candy):
-            return False
-
         target_color = (
             neighbor_candy.color
             if neighbor_candy.color is not None
@@ -603,6 +604,8 @@ class SpecialActivationLogic:
     def _apply_enhanced_damage(self, r, c):
         if not self.board.can_cell_hold_occupant(r, c):
             return
+
+        self._mark_impacted(r, c)
 
         cell = self.board.get_board_element(r, c)
         if cell.occupant is None:
@@ -629,6 +632,14 @@ class SpecialActivationLogic:
 
         return random.choice(candidates) if candidates else None
 
+    def consume_impacted_columns(self):
+        impacted = set(self._impacted_columns)
+        self._impacted_columns.clear()
+        return impacted
+
+    def _mark_impacted(self, r, c):
+        if self.board.can_cell_hold_occupant(r, c):
+            self._impacted_columns.add(c)
 
 ================================================================================
 FILE: ObjectiveManager.py
@@ -663,8 +674,8 @@ class ObjectiveManager:
 FILE: Board.py
 ================================================================================
 
-import random
 from Cell import Cell
+from ColumnStateManager import ColumnStateManager
 
 
 class Board:
@@ -672,6 +683,7 @@ class Board:
         self.rows = rows
         self.cols = cols
         self.color_set = list(color_set)
+        self.column_states = ColumnStateManager(self.cols)
 
         # Board structure (Cell / GapCell)
         if board_layout is None:
@@ -728,21 +740,22 @@ class Board:
     # Swap validation
     # --------------------------------------------------
     def can_swap(self, r1, c1, r2, c2) -> bool:
-        # adjacency
-        if abs(r1 - r2) + abs(c1 - c2) != 1:
-            return False
-
         try:
+            if abs(r1 - r2) + abs(c1 - c2) != 1:
+                return False
+
+            if not self.column_states.can_interact(c1) or not self.column_states.can_interact(c2):
+                return False
+
             cell1 = self.get_board_element(r1, c1)
             cell2 = self.get_board_element(r2, c2)
+
+            if not cell1.can_swap() or not cell2.can_swap():
+                return False
+
+            return True
         except IndexError:
             return False
-
-        if not cell1.can_swap() or not cell2.can_swap():
-            return False
-
-        return True
-
 
 
 ================================================================================
@@ -783,34 +796,54 @@ class ClearEntityObjective(Objective):
         )
 
 ================================================================================
+FILE: ColumnState.py
+================================================================================
+
+# ColumnState.py
+from enum import Enum, auto
+
+
+class ColumnState(Enum):
+    STABLE = auto()
+    LOCKED = auto()
+    FALLING = auto()
+
+================================================================================
 FILE: SpawnLogic.py
 ================================================================================
 
 import random
-from Candy import Candy
+
+from Candy import Candy, NormalCandy
+from Cascading import Cascading
 
 
 class SpawnLogic:
     def __init__(self, board):
         self.board = board
 
-    def apply(self) -> bool:
+    def apply(self, columns=None) -> set[int]:
+        if columns is None:
+            columns = range(self.board.cols)
+
+        spawned_columns = set()
+        for c in columns:
+            if self.apply_column(c):
+                spawned_columns.add(c)
+
+        return spawned_columns
+
+    def apply_column(self, c) -> bool:
+        """
+        Spawn only into entry slots that remain empty after gravity settles
+        the column.
+
+        We do NOT spawn into every empty playable cell.
+        We only fill the top empty run of each free interval.
+        """
         spawned = False
-        for c in range(self.board.cols):
-            spawned |= self._spawn_column(c)
-        return spawned
 
-    # ------------------------------------------------------------
-
-    def _spawn_column(self, c) -> bool:
-        spawned = False
-
-        spawn_rows = [
-            r for r in range(self.board.rows)
-            if self.board.get_board_element(r, c).can_spawn()
-        ]
-
-        for r in spawn_rows:
+        for r in self._collect_spawn_rows_for_column(c):
             cell = self.board.get_board_element(r, c)
             if cell.occupant is None:
                 cell.occupant = self.spawn_random_candy()
@@ -818,12 +851,70 @@ class SpawnLogic:
 
         return spawned
 
+    def _collect_spawn_rows_for_column(self, c):
+        results = []
+
+        for segment_rows in self._iter_column_segments(c):
+            results.extend(self._collect_spawn_rows_for_segment(c, segment_rows))
+
+        return results
+
+    def _iter_column_segments(self, c):
+        segment = []
+
+        for r in range(self.board.rows):
+            cell = self.board.get_board_element(r, c)
+            if cell.can_hold_occupant():
+                segment.append(r)
+            elif segment:
+                yield segment
+                segment = []
+
+        if segment:
+            yield segment
+
+    def _collect_spawn_rows_for_segment(self, c, segment_rows):
+        spawn_rows = []
+        interval_start = 0
+
+        while interval_start < len(segment_rows):
+            interval_end = interval_start
+
+            while interval_end < len(segment_rows):
+                r = segment_rows[interval_end]
+                occ = self.board.get_board_element(r, c).occupant
+
+                if occ is not None:
+                    cascade_behavior = occ.get(Cascading)
+                    if not cascade_behavior or not cascade_behavior.can_fall():
+                        break
+
+                interval_end += 1
+
+            interval_rows = segment_rows[interval_start:interval_end]
+            spawn_rows.extend(self._top_empty_run_in_interval(c, interval_rows))
+            interval_start = interval_end + 1
+
+        return spawn_rows
+
+    def _top_empty_run_in_interval(self, c, interval_rows):
+        rows = []
+
+        for r in interval_rows:
+            cell = self.board.get_board_element(r, c)
+            if cell.occupant is None and cell.can_spawn():
+                rows.append(r)
+            else:
+                break
+
+        return rows
+
     def spawn_random_candy(self):
         color = random.choice(self.board.color_set)
-        return Candy(color)
+        return NormalCandy(color)
 
     def spawn_custom_candy(self, color, _type):
-        return Candy(color, _type)
+        return Candy.from_type(color, _type)
 
 ================================================================================
 FILE: BasicMatchBlocking.py
@@ -963,52 +1054,86 @@ FILE: CascadeLogic.py
 
 from Cascading import Cascading
 
+
 class CascadeLogic:
     def __init__(self, board):
         self.board = board
 
-    def apply(self) -> bool:
+    def apply(self, columns=None) -> set[int]:
+        if columns is None:
+            columns = range(self.board.cols)
+
+        moved_columns = set()
+        for c in columns:
+            if self.apply_column(c):
+                moved_columns.add(c)
+
+        return moved_columns
+
+    def apply_column(self, col) -> bool:
+        """
+        Resolve gravity inside a single column.
+
+        The column is treated as independent vertical segments separated by
+        cells that cannot hold occupants (gaps).
+
+        Inside each segment:
+        - falling occupants compact downward,
+        - non-falling occupants stay fixed and behave like anchors,
+        - empty cells are left only at the top of each free interval.
+        """
         moved = False
-        for c in range(self.board.cols):
-            if self._cascade_column(c):
+
+        for segment_rows in self._iter_column_segments(col):
+            if self._settle_segment(col, segment_rows):
                 moved = True
+
         return moved
 
-    # ------------------------------------------------------------
+    def _iter_column_segments(self, col):
+        segment = []
 
-    def _cascade_column(self, c) -> bool:
-        moved = False
+        for r in range(self.board.rows):
+            cell = self.board.get_board_element(r, col)
+            if cell.can_hold_occupant():
+                segment.append(r)
+            elif segment:
+                yield segment
+                segment = []
 
-        # rows that can hold occupants
-        valid_rows = [
-            r for r in range(self.board.rows)
-            if self.board.get_board_element(r, c).can_hold_occupant()
-        ]
+        if segment:
+            yield segment
 
-        if not valid_rows:
+    def _can_fall(self, occupant) -> bool:
+        if occupant is None:
             return False
 
-        write_index = len(valid_rows) - 1
+        cascading = occupant.get(Cascading)
+        return bool(cascading and cascading.can_fall())
 
-        for r in reversed(valid_rows):
-            cell = self.board.get_board_element(r, c)
+    def _settle_segment(self, col, segment_rows) -> bool:
+        moved = False
+        next_write_idx = len(segment_rows) - 1
+
+        for idx in range(len(segment_rows) - 1, -1, -1):
+            r = segment_rows[idx]
+            cell = self.board.get_board_element(r, col)
             occ = cell.occupant
 
             if occ is None:
                 continue
 
-            cascading = occ.get(Cascading)
-            if not cascading or not cascading.can_fall():
-                write_index -= 1
+            if not self._can_fall(occ):
+                next_write_idx = idx - 1
                 continue
 
-            target_row = valid_rows[write_index]
+            target_row = segment_rows[next_write_idx]
             if target_row != r:
-                self.board.get_board_element(target_row, c).occupant = occ
+                self.board.get_board_element(target_row, col).occupant = occ
                 cell.occupant = None
                 moved = True
 
-            write_index -= 1
+            next_write_idx -= 1
 
         return moved
 
@@ -1280,8 +1405,7 @@ FILE: MatchLogic.py
 ================================================================================
 
 # MatchLogic.py
-import random
-from Candy import Candy
+from Candy import Candy, RocketVCandy, CandyFactory
 from CandyType import CandyType
 from MatchResult import MatchResult
 
@@ -1290,23 +1414,12 @@ class MatchLogic:
     def __init__(self, board):
         self.board = board
 
-    # ============================================================
-    # PUBLIC API
-    # ============================================================
-
     def find_best_match(self, match_cells, pivot):
-        """
-        Used after a swap where pivot is known.
-        """
         if not match_cells or pivot not in match_cells:
             return None
-
         return self._resolve_group(match_cells, pivot)
 
     def resolve_matches(self, all_matches, pivot_policy):
-        """
-        Used during cascades / combos.
-        """
         results = []
 
         for cells in all_matches:
@@ -1321,14 +1434,7 @@ class MatchLogic:
 
         return results
 
-    # ============================================================
-    # CORE LOGIC
-    # ============================================================
-
     def _resolve_group(self, cells, pivot):
-        """
-        Decide special candy (if any) based on pivot-centric line analysis.
-        """
         pivot_candy = self.board.get_occupant(*pivot)
         if not isinstance(pivot_candy, Candy):
             return None
@@ -1338,37 +1444,29 @@ class MatchLogic:
 
         spawn_candy = None
 
-        # -----------------------------
-        # Special decision rules
-        # -----------------------------
-
         if max(h_len, v_len) >= 5:
-            spawn_candy = Candy(
-                pivot_candy.color,
-                CandyType.LIGHT_BALL
+            spawn_candy = CandyFactory.create(
+                candy_type=CandyType.LIGHT_BALL,
+                color=pivot_candy.color
             )
 
         elif h_len >= 3 and v_len >= 3:
-            spawn_candy = Candy(
-                pivot_candy.color,
-                CandyType.BOMB
+            spawn_candy = CandyFactory.create(
+                candy_type=CandyType.BOMB,
+                color=pivot_candy.color
             )
 
         elif max(h_len, v_len) == 4:
-            spawn_candy = Candy(
-                pivot_candy.color,
-                CandyType.ROCKET_H if h_len == 4 else CandyType.ROCKET_V
+            spawn_candy = CandyFactory.create(
+                candy_type=CandyType.ROCKET_H if h_len == 4 else CandyType.ROCKET_V,
+                color=pivot_candy.color
             )
 
         elif size >= 4:
-            spawn_candy = Candy(
-                pivot_candy.color,
-                CandyType.PROPELLER
+            spawn_candy = CandyFactory.create(
+                candy_type=CandyType.PROPELLER,
+                color=pivot_candy.color
             )
-
-        # -----------------------------
-        # Result
-        # -----------------------------
 
         return MatchResult(
             cells_to_remove=set(cells),
@@ -1377,14 +1475,7 @@ class MatchLogic:
             pivot_candy=pivot_candy
         )
 
-    # ============================================================
-    # HELPERS
-    # ============================================================
-
     def _analyze_pivot(self, cells, pivot):
-        """
-        Returns (horizontal_length, vertical_length)
-        """
         pr, pc = pivot
         cell_set = set(cells)
 
@@ -1406,7 +1497,6 @@ class MatchLogic:
         v_len = up + down + 1
 
         return h_len, v_len
-    
 
 ================================================================================
 FILE: BoardElement.py
@@ -1489,7 +1579,7 @@ FILE: BoardDesigner.py
 import random
 
 from Board import Board
-from Candy import Candy
+from Candy import Candy, NormalCandy
 from CandyType import CandyType
 
 
@@ -1601,7 +1691,7 @@ class BoardDesigner:
         if not choices:
             raise RuntimeError("No valid colors available during initialization")
 
-        self.board.get_board_element(r, c).occupant = Candy(random.choice(tuple(choices)))
+        self.board.get_board_element(r, c).occupant = NormalCandy(random.choice(tuple(choices)))
 
 ================================================================================
 FILE: GameSession.py
@@ -1707,7 +1797,7 @@ from GapCell import GapCell
 from Level import Level
 from ColorType import ColorType
 from ClearEntityObjective import ClearEntityObjective
-from Candy import Candy
+from Candy import Candy, RocketHCandy, BombCandy
 from Snow import Snow
 from Vines import Vines
 
@@ -1718,14 +1808,11 @@ class Level1(Level):
         self.color_set = [ColorType.RED, ColorType.BLUE, ColorType.GREEN, ColorType.YELLOW]
         self.moves = 20
         """self.layout = [
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), GapCell(), GapCell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell()]
         ]"""
         self.layout = [
             [Cell(), Cell(), Cell()],
@@ -1739,16 +1826,76 @@ class Level1(Level):
 
     def set_objectives(self):
         self.layout[0][0] = Cell(
-            occupant=Candy(ColorType.YELLOW, CandyType.ROCKET_H),
+            occupant=RocketHCandy(ColorType.YELLOW),
             overlay=Vines(),
             underlay=Snow(),
         )
 
-        self.layout[0][1] = Cell(
-            occupant=Candy(ColorType.YELLOW, CandyType.ROCKET_H))
+        """self.layout[4][1] = Cell(
+            occupant=RocketHCandy(ColorType.YELLOW))
+
+        self.layout[4][4] = Cell(
+            occupant=BombCandy(ColorType.YELLOW))"""
+
 
         self.objectives = [ClearEntityObjective(Vines), ClearEntityObjective(Snow)]
 
+
+================================================================================
+FILE: ColumnStateManager.py
+================================================================================
+
+from ColumnState import ColumnState
+
+
+class ColumnStateManager:
+    def __init__(self, cols):
+        self.states = [ColumnState.STABLE for _ in range(cols)]
+
+    def is_stable(self, col):
+        return self.states[col] == ColumnState.STABLE
+
+    def is_locked(self, col):
+        return self.states[col] == ColumnState.LOCKED
+
+    def is_falling(self, col):
+        return self.states[col] == ColumnState.FALLING
+
+    def can_interact(self, col):
+        return self.is_stable(col)
+
+    def can_match(self, col):
+        return not self.is_falling(col)
+
+    def lock(self, col: int):
+        self.states[col] = ColumnState.LOCKED
+
+    def lock_many(self, cols):
+        for col in set(cols):
+            self.lock(col)
+
+    def start_falling(self, col):
+        self.states[col] = ColumnState.FALLING
+
+    def start_falling_many(self, cols):
+        for col in set(cols):
+            self.start_falling(col)
+
+    def set_stable(self, col):
+        self.states[col] = ColumnState.STABLE
+
+    def set_stable_many(self, cols):
+        for col in set(cols):
+            self.set_stable(col)
+
+    def any_falling(self):
+        return any(s == ColumnState.FALLING for s in self.states)
+
+    def any_locked(self):
+        return any(s == ColumnState.LOCKED for s in self.states)
+
+    def __str__(self):
+        return str(self.states)
 
 ================================================================================
 FILE: export_code.py
@@ -1788,7 +1935,7 @@ class BasicSwappable(Swappable):
 FILE: DeadlockDetectionLogic.py
 ================================================================================
 
-from Candy import Candy
+from Candy import Candy, NormalCandy
 from CandyType import CandyType
 from MatchDetectionLogic import MatchDetectionLogic
 
@@ -1813,6 +1960,9 @@ class DeadlockDetectionLogic:
     # Check whether a specific swap is valid
     # ------------------------------------------------------------
     def _is_valid_swap(self, r1, c1, r2, c2):
+        if not self.board.can_swap(r1, c1, r2, c2):
+            return False
+
         if abs(r1 - r2) + abs(c1 - c2) != 1:
             return False
 
@@ -1820,9 +1970,8 @@ class DeadlockDetectionLogic:
         b = self.board.get_occupant(r2, c2)
 
         if (
-            not isinstance(a, Candy)
-            or not isinstance(b, Candy)
-            or a.type != CandyType.NORMAL
+            not isinstance(a, NormalCandy)
+            or not isinstance(b, NormalCandy)
             or a == b
         ):
             return False
@@ -1866,7 +2015,6 @@ class DeadlockDetectionLogic:
                 if r + 1 < rows and self.board.can_cell_hold_occupant(r + 1, c):
                     if self._is_valid_swap(r, c, r + 1, c):
                         print("found valid swap:", r, c, r + 1, c)
-
                         return (r, c), (r + 1, c)
 
         return None
@@ -1998,6 +2146,8 @@ FILE: Candy.py
 ================================================================================
 
 # ===== Candy.py =====
+from abc import ABC
+
 from BasicMatchable import BasicMatchable
 from CandyType import CandyType
 from CellOccupant import CellOccupant
@@ -2009,30 +2159,63 @@ from BasicDamageable import BasicDamageable
 from DamageType import DamageType
 
 
-class Candy(CellOccupant):
-    __slots__ = ("color", "type")
+class Candy(CellOccupant, ABC):
+    """
+    Abstract candy base class.
 
-    def __init__(self, color: ColorType, type: CandyType = CandyType.NORMAL):
-        super().__init__()  # IMPORTANT: initializes _behaviors
+    Cells should only ever hold concrete candy subclasses such as:
+    - NormalCandy
+    - RocketHCandy
+    - RocketVCandy
+    - BombCandy
+    - LightBallCandy
+    - PropellerCandy
+    """
 
+    __slots__ = ("color",)
+    candy_type = None
+
+    def __init__(self, color: ColorType):
+        if type(self) is Candy:
+            raise TypeError("Candy is abstract and cannot be instantiated directly")
+
+        super().__init__()
         self.color = color
-        self.type = type
 
-        # ----- default behaviors -----
+        self.add_behavior(BasicMatchable())
         self.add_behavior(BasicSwappable())
         self.add_behavior(BasicCascading())
         self.add_behavior(BasicDamageReflecting())
-
-        # basic candies are destroyed by normal match damage
         self.add_behavior(
             BasicDamageable(
                 hp=1,
-                allowed_minimum=DamageType.MATCH
+                allowed_minimum=DamageType.MATCH,
             )
         )
 
+    @property
+    def type(self) -> CandyType:
+        if self.candy_type is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} must define candy_type"
+            )
+        return self.candy_type
+
     def is_special(self) -> bool:
-        return self.type != CandyType.NORMAL
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement is_special()"
+        )
+
+    def is_normal(self) -> bool:
+        return not self.is_special()
+
+    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
+        """Hook for explicit swap activation."""
+        return False
+
+    def on_hit(self, special_logic, pos) -> bool:
+        """Hook for indirect activation from another effect."""
+        return False
 
     def __str__(self):
         return f"{self.type.name}-{self.color.name}"
@@ -2040,9 +2223,100 @@ class Candy(CellOccupant):
     def __eq__(self, other):
         return (
             isinstance(other, Candy)
+            and type(self) is type(other)
             and self.color == other.color
-            and self.type == other.type
         )
+
+
+
+
+class NormalCandy(Candy):
+    candy_type = CandyType.NORMAL
+
+    def is_special(self) -> bool:
+        return False
+
+
+class SpecialCandy(Candy, ABC):
+    def is_special(self) -> bool:
+        return True
+
+
+class RocketHCandy(SpecialCandy):
+    candy_type = CandyType.ROCKET_H
+
+    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
+        special_logic.trigger_rocket(pos, horizontal=True)
+        return True
+
+    def on_hit(self, special_logic, pos) -> bool:
+        special_logic.trigger_rocket(pos, horizontal=True)
+        return True
+
+
+class RocketVCandy(SpecialCandy):
+    candy_type = CandyType.ROCKET_V
+
+    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
+        special_logic.trigger_rocket(pos, horizontal=False)
+        return True
+
+    def on_hit(self, special_logic, pos) -> bool:
+        special_logic.trigger_rocket(pos, horizontal=False)
+        return True
+
+
+class BombCandy(SpecialCandy):
+    candy_type = CandyType.BOMB
+
+    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
+        special_logic.trigger_bomb(pos)
+        return True
+
+    def on_hit(self, special_logic, pos) -> bool:
+        special_logic.trigger_bomb(pos)
+        return True
+
+
+class LightBallCandy(SpecialCandy):
+    candy_type = CandyType.LIGHT_BALL
+
+    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
+        if neighbor_candy is None:
+            return False
+        return special_logic.trigger_light_ball_swap(pos, neighbor_candy)
+
+    def on_hit(self, special_logic, pos) -> bool:
+        return special_logic.trigger_light_ball_hit(pos)
+
+
+class PropellerCandy(SpecialCandy):
+    candy_type = CandyType.PROPELLER
+
+    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
+        special_logic.trigger_propeller(pos, pre_damage=True)
+        return True
+
+    def on_hit(self, special_logic, pos) -> bool:
+        special_logic.trigger_propeller(pos, pre_damage=True)
+        return True
+
+class CandyFactory:
+    @staticmethod
+    def create(candy_type: CandyType, color: ColorType) -> Candy:
+        mapping = {
+            CandyType.NORMAL: NormalCandy,
+            CandyType.ROCKET_H: RocketHCandy,
+            CandyType.ROCKET_V: RocketVCandy,
+            CandyType.BOMB: BombCandy,
+            CandyType.LIGHT_BALL: LightBallCandy,
+            CandyType.PROPELLER: PropellerCandy,
+        }
+        candy_cls = mapping.get(candy_type)
+        if candy_cls is None:
+            raise ValueError(f"Unsupported candy type: {candy_type}")
+        return candy_cls(color)
+
 
 ================================================================================
 FILE: PivotPolicy.py
@@ -2204,8 +2478,11 @@ class MatchDetectionLogic:
         if not self.board.can_cell_hold_occupant(r, c):
             return set()
 
+        if not self.board.column_states.can_match(c):
+            return set()
+
         origin = get_cell_occupant_fn(r, c)
-        if not isinstance(origin, Candy) or origin.type != CandyType.NORMAL:
+        if not isinstance(origin, Candy) or not origin.is_normal():
             return set()
 
         matches = set()
@@ -2216,11 +2493,11 @@ class MatchDetectionLogic:
         horiz = [(r, c)]
 
         cc = c - 1
-        while self.board.can_cell_hold_occupant(r, cc):
+        while self.board.can_cell_hold_occupant(r, cc) and self.board.column_states.can_match(cc):
             b = get_cell_occupant_fn(r, cc)
             if (
                 not isinstance(b, Candy)
-                or b.type != CandyType.NORMAL
+                or not b.is_normal()
                 or b.color != origin.color
             ):
                 break
@@ -2228,11 +2505,11 @@ class MatchDetectionLogic:
             cc -= 1
 
         cc = c + 1
-        while self.board.can_cell_hold_occupant(r, cc):
+        while self.board.can_cell_hold_occupant(r, cc) and self.board.column_states.can_match(cc):
             b = get_cell_occupant_fn(r, cc)
             if (
                 not isinstance(b, Candy)
-                or b.type != CandyType.NORMAL
+                or not b.is_normal()
                 or b.color != origin.color
             ):
                 break
@@ -2252,7 +2529,7 @@ class MatchDetectionLogic:
             b = get_cell_occupant_fn(rr, c)
             if (
                 not isinstance(b, Candy)
-                or b.type != CandyType.NORMAL
+                or not b.is_normal()
                 or b.color != origin.color
             ):
                 break
@@ -2264,7 +2541,7 @@ class MatchDetectionLogic:
             b = get_cell_occupant_fn(rr, c)
             if (
                 not isinstance(b, Candy)
-                or b.type != CandyType.NORMAL
+                or not b.is_normal()
                 or b.color != origin.color
             ):
                 break
@@ -2287,7 +2564,11 @@ class MatchDetectionLogic:
                 ]
 
                 # all positions must be valid
-                if not all(self.board.can_cell_hold_occupant(rr, cc) for rr, cc in square_coords):
+                if not all(
+                        self.board.can_cell_hold_occupant(rr, cc)
+                        and self.board.column_states.can_match(cc)
+                        for rr, cc in square_coords
+                ):
                     continue
 
                 blocks = [
@@ -2296,7 +2577,7 @@ class MatchDetectionLogic:
                 ]
 
                 if any(
-                    not isinstance(b, Candy) or b.type != CandyType.NORMAL
+                    not isinstance(b, Candy) or not b.is_normal()
                     for b in blocks
                 ):
                     continue
@@ -2310,20 +2591,27 @@ class MatchDetectionLogic:
     # ------------------------------------------------------------
     # Collect all matches on the board
     # ------------------------------------------------------------
-    def collect_all_matches(self):
+    def collect_all_matches(self, origin_columns=None):
         visited = set()
         matches = []
+        origin_columns = set(origin_columns) if origin_columns is not None else None
 
         for r in range(self.board.rows):
             for c in range(self.board.cols):
                 if (r, c) in visited:
                     continue
 
+                if origin_columns is not None and c not in origin_columns:
+                    continue
+
                 if not self.board.can_cell_hold_occupant(r, c):
                     continue
 
+                if not self.board.column_states.can_match(c):
+                    continue
+
                 origin = self.board.get_board_element(r, c).occupant
-                if not isinstance(origin, Candy) or origin.type != CandyType.NORMAL:
+                if not isinstance(origin, Candy) or not origin.is_normal():
                     continue
 
                 match = self.collect_matches_at(r, c)
@@ -2450,7 +2738,6 @@ from CandyType import CandyType
 
 
 class GameLogic:
-
     def __init__(self, board):
         self.board = board
         self.md_logic = MatchDetectionLogic(board)
@@ -2462,16 +2749,11 @@ class GameLogic:
         self.deadlock_logic = DeadlockDetectionLogic(board)
 
     def __swap(self, r1, c1, r2, c2) -> bool:
-        """
-        Attempt to swap two cell occupants.
-        Returns True if swap was performed, False otherwise.
-        """
         if not self.board.can_swap(r1, c1, r2, c2):
             return False
 
         cell1 = self.board.get_board_element(r1, c1)
         cell2 = self.board.get_board_element(r2, c2)
-
         cell1.occupant, cell2.occupant = cell2.occupant, cell1.occupant
         return True
 
@@ -2486,156 +2768,191 @@ class GameLogic:
 
         pending_match_results = []
         pending_special_activations = []
+        impacted_columns = {c1, c2}
 
         candy_a = self.board.get_occupant(r1, c1)
         candy_b = self.board.get_occupant(r2, c2)
 
         combo_handled = False
-        # 0️⃣ ordered special+special combo: (a swapped into b)
         if self.special_logic.can_activate_combo_on_swap(candy_a, candy_b):
             combo_handled = self.special_logic.activate_combo_on_swap(
                 (r1, c1), (r2, c2), candy_a, candy_b
             )
             if combo_handled:
                 pending_special_activations.append(True)
+                impacted_columns |= self.special_logic.consume_impacted_columns()
 
-        # ------------------------------------------------------------
-        # 1️⃣ Evaluate both pivots independently
-        # ------------------------------------------------------------
         for pos in pivots:
+            if combo_handled:
+                continue
+
             r, c = pos
             candy = self.board.get_occupant(r, c)
 
-            # --- normal match detection ---
             match = self.md_logic.collect_matches_at(r, c)
             if match:
                 pivot = swap_policy.choose_pivot(match)
                 result = self.match_logic.find_best_match(match, pivot)
                 if result:
                     pending_match_results.append(result)
+                    impacted_columns |= self._columns_from_cells(match)
+                    if result.spawn_pos is not None:
+                        impacted_columns.add(result.spawn_pos[1])
 
-            if combo_handled:
-                continue
-
-            # --- special swap activation ---
             if isinstance(candy, Candy) and candy.type != CandyType.NORMAL:
-                # Determine the neighboring (other swapped) candy
-                if pos == (r1, c1):
-                    neighbor = self.board.get_occupant(r2, c2)
-                else:
-                    neighbor = self.board.get_occupant(r1, c1)
-
-                activated = self.special_logic.activate_on_swap(
-                    pos,
-                    candy,
-                    neighbor
-                )
-
+                neighbor = self.board.get_occupant(r2, c2) if pos == (r1, c1) else self.board.get_occupant(r1, c1)
+                activated = self.special_logic.activate_on_swap(pos, candy, neighbor)
                 if activated:
                     pending_special_activations.append(True)
+                    impacted_columns |= self.special_logic.consume_impacted_columns()
 
-        # ------------------------------------------------------------
-        # 2️⃣ If nothing happened, revert swap
-        # ------------------------------------------------------------
         if not pending_match_results and not pending_special_activations:
             self.__swap(r1, c1, r2, c2)
+            self.board.column_states.set_stable_many({c1, c2})
             return False
 
-        # ------------------------------------------------------------
-        # 3️⃣ Apply match damage
-        # ------------------------------------------------------------
+        self.board.column_states.lock_many(impacted_columns)
+
         for result in pending_match_results:
             self.damage_logic.apply_match_result(result)
+            impacted_columns |= self._columns_from_match_result(result)
+
             if result.spawn_candy:
                 self.board.get_board_element(*result.spawn_pos).occupant = (
                     self.spawn_logic.spawn_custom_candy(
                         result.spawn_candy.color,
-                        result.spawn_candy.type
+                        result.spawn_candy.type,
                     )
                 )
+                impacted_columns.add(result.spawn_pos[1])
 
         print(f"after swap and pop:\n{self.board}")
-
-        # ------------------------------------------------------------
-        # 5️⃣ Cascades + combos
-        # ------------------------------------------------------------
-        self._resolve_cascade()
-        self._resolve_combos()
-
+        self._resolve_columns(impacted_columns)
         return True
 
     def tap(self, r, c):
-        """
-        Tap activation:
-        - Activates a special candy without swapping
-        - Normal candies cannot be tapped
-        """
+        if not self.board.column_states.can_interact(c):
+            return False
+
         candy = self.board.get_occupant(r, c)
         if not isinstance(candy, Candy):
             return False
         if candy.type == CandyType.NORMAL:
             return False
 
-        # activate the special immediately
         activated = self.special_logic.activate_on_hit((r, c), candy)
         if not activated:
             return False
 
+        impacted_columns = {c}
+        impacted_columns |= self.special_logic.consume_impacted_columns()
+        self.board.column_states.lock_many(impacted_columns)
+
         print(f"after tap and pop:\n{self.board}")
-
-        # resolve cascades and follow-up combos
-        self._resolve_cascade()
-        self._resolve_combos()
-
+        self._resolve_columns(impacted_columns)
         return True
 
-    def _resolve_cascade(self):
-        """
-        Runs cascade + spawn until board is stable.
-        """
+    def _resolve_columns(self, initial_columns):
+        active_columns = set(initial_columns)
+        if not active_columns:
+            return
+
+        self.board.column_states.lock_many(active_columns)
+
         while True:
-            moved = self.cascade_logic.apply()
-            spawned = self.spawn_logic.apply()
+            settled_columns = self._resolve_cascade(active_columns)
+            combo_columns = self._resolve_combo_wave(settled_columns)
 
-            if not moved and not spawned:
-                break
+            if not combo_columns:
+                self.board.column_states.set_stable_many(settled_columns)
+                return
 
-        print(f"after resolve cascade:\n{self.board}")
+            active_columns = combo_columns
 
-    def _resolve_combos(self):
-        """
-        Detects and resolves matches until board is stale.
-        """
-        combo = 0
+    def _resolve_cascade(self, columns):
+        columns = set(columns)
+
+        while True:
+            loose_columns = self._find_unsettled_columns(columns)
+            if not loose_columns:
+                self.board.column_states.lock_many(columns)
+                print(f"after resolve cascade:\n{self.board}")
+                return columns
+
+            self.board.column_states.start_falling_many(loose_columns)
+
+            moved_columns = self.cascade_logic.apply(loose_columns)
+            spawned_columns = self.spawn_logic.apply(loose_columns)
+            changed_columns = moved_columns | spawned_columns
+            columns |= loose_columns | changed_columns
+
+            if not changed_columns:
+                self.board.column_states.lock_many(columns)
+                print(f"after resolve cascade:\n{self.board}")
+                return columns
+
+    def _resolve_combo_wave(self, origin_columns):
+        all_matches = self.md_logic.collect_all_matches(origin_columns=origin_columns)
+        if not all_matches:
+            return set()
+
+        print("combo")
         policy = CascadePivotPolicy()
+        match_results = self.match_logic.resolve_matches(all_matches, policy)
 
-        while True:
-            all_matches = self.md_logic.collect_all_matches()
-            if not all_matches:
-                break
+        for result in match_results:
+            print(
+                "match result:",
+                result.cells_to_remove,
+                result.spawn_candy if result.spawn_candy is not None else None,
+                result.spawn_pos if result.spawn_pos is not None else None,
+            )
 
-            combo += 1
-            print(f"combo {combo}")
+        impacted_columns = set()
 
-            match_results = self.match_logic.resolve_matches(all_matches, policy)
-            for result in match_results:
-                print(
-                    "match result:", result.cells_to_remove, result.spawn_candy
-                    if result.spawn_candy is not None else None,
-                    result.spawn_pos if result.spawn_pos is not None else None)
+        for result in match_results:
+            self.damage_logic.apply_match_result(result)
+            impacted_columns |= self._columns_from_match_result(result)
 
-            for result in match_results:
-                self.damage_logic.apply_match_result(result)
-
-                if result.spawn_candy:
-                    self.board.get_board_element(*result.spawn_pos).occupant = (
-                        result.spawn_candy
+            if result.spawn_candy:
+                self.board.get_board_element(*result.spawn_pos).occupant = (
+                    self.spawn_logic.spawn_custom_candy(
+                        result.spawn_candy.color,
+                        result.spawn_candy.type,
                     )
+                )
+                impacted_columns.add(result.spawn_pos[1])
 
-            print(f"after resolve combo:\n{self.board}")
+        self.board.column_states.lock_many(impacted_columns)
+        print(f"after combo pop:\n{self.board}")
+        return impacted_columns
 
-            self._resolve_cascade()
+    def _find_unsettled_columns(self, columns):
+        unsettled = set()
+        for c in columns:
+            if self._column_has_empty_slot(c):
+                unsettled.add(c)
+        return unsettled
 
+    def _column_has_empty_slot(self, col):
+        for r in range(self.board.rows):
+            if not self.board.can_cell_hold_occupant(r, col):
+                continue
+
+            cell = self.board.get_board_element(r, col)
+            if cell.occupant is None:
+                return True
+
+        return False
+
+    def _columns_from_cells(self, cells):
+        return {c for _, c in cells}
+
+    def _columns_from_match_result(self, result):
+        cols = self._columns_from_cells(result.cells_to_remove)
+        if result.spawn_pos is not None:
+            cols.add(result.spawn_pos[1])
+        return cols
 
 ================================================================================
 FILE: Swappable.py
