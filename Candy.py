@@ -1,4 +1,3 @@
-# ===== Candy.py =====
 from abc import ABC
 
 from BasicMatchable import BasicMatchable
@@ -62,25 +61,20 @@ class Candy(CellOccupant, ABC):
     def is_normal(self) -> bool:
         return not self.is_special()
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        """Hook for explicit swap activation."""
-        return False
-
     def on_hit(self, special_logic, pos) -> bool:
         """Hook for indirect activation from another effect."""
         return False
+
 
     def __str__(self):
         return f"{self.type.name}-{self.color.name}"
 
     def __eq__(self, other):
         return (
-            isinstance(other, Candy)
-            and type(self) is type(other)
-            and self.color == other.color
+                isinstance(other, Candy)
+                and type(self) is type(other)
+                and self.color == other.color
         )
-
-
 
 
 class NormalCandy(Candy):
@@ -98,10 +92,6 @@ class SpecialCandy(Candy, ABC):
 class RocketHCandy(SpecialCandy):
     candy_type = CandyType.ROCKET_H
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_rocket(pos, horizontal=True)
-        return True
-
     def on_hit(self, special_logic, pos) -> bool:
         special_logic.trigger_rocket(pos, horizontal=True)
         return True
@@ -110,34 +100,23 @@ class RocketHCandy(SpecialCandy):
 class RocketVCandy(SpecialCandy):
     candy_type = CandyType.ROCKET_V
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_rocket(pos, horizontal=False)
-        return True
-
     def on_hit(self, special_logic, pos) -> bool:
         special_logic.trigger_rocket(pos, horizontal=False)
         return True
+
 
 
 class BombCandy(SpecialCandy):
     candy_type = CandyType.BOMB
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_bomb(pos)
-        return True
-
     def on_hit(self, special_logic, pos) -> bool:
         special_logic.trigger_bomb(pos)
         return True
 
 
+
 class LightBallCandy(SpecialCandy):
     candy_type = CandyType.LIGHT_BALL
-
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        if neighbor_candy is None:
-            return False
-        return special_logic.trigger_light_ball_swap(pos, neighbor_candy)
 
     def on_hit(self, special_logic, pos) -> bool:
         return special_logic.trigger_light_ball_hit(pos)
@@ -146,13 +125,10 @@ class LightBallCandy(SpecialCandy):
 class PropellerCandy(SpecialCandy):
     candy_type = CandyType.PROPELLER
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_propeller(pos, pre_damage=True)
-        return True
-
     def on_hit(self, special_logic, pos) -> bool:
         special_logic.trigger_propeller(pos, pre_damage=True)
         return True
+
 
 class CandyFactory:
     @staticmethod

@@ -1,4 +1,3 @@
-from BasicDamageable import BasicDamageable
 from BoardElement import BoardElement
 from CellOccupant import CellOccupant
 from CellOverlay import CellOverlay
@@ -9,7 +8,6 @@ from Damageable import Damageable
 from GameEvents import EntityClearedEvent
 from MatchBlocking import MatchBlocking
 from Swappable import Swappable
-from CellEntityClearedEvent import CellEntityClearedEvent
 
 
 class Cell(BoardElement):
@@ -69,10 +67,14 @@ class Cell(BoardElement):
 
     # ---------- damage routing ----------
 
-    def apply_damage(self, ctx: DamageContext, event_sink = None):
+    def apply_damage(self, ctx: DamageContext, pos=None, on_special_hit=None):
         """
         Damage priority:
         overlay -> occupant -> underlay
+
+        `on_special_hit(pos, entity, ctx) -> bool` is an optional hook owned by the
+        game-resolution layer. If it returns True, the hit was converted into a
+        special activation and normal occupant damage is skipped.
         """
         for entity in (self.overlay, self.occupant, self.underlay):
             if not entity:
@@ -82,14 +84,19 @@ class Cell(BoardElement):
             if not dmg or not dmg.can_take_damage(ctx):
                 continue
 
-            # Apply damage
+            if (
+                    entity is self.occupant
+                    and on_special_hit is not None
+                    and pos is not None
+                    and on_special_hit(pos, entity, ctx)
+            ):
+                return
+
             dmg.take_damage(ctx)
 
-            # Remove if destroyed
             if dmg.is_destroyed():
                 self._remove_entity(entity)
 
-            # Decide whether damage continues
             reflector = entity.get(DamageReflecting)
             if not reflector or not reflector.can_reflect_damage():
                 break
