@@ -18,7 +18,7 @@ class ColumnStateManager:
         return self.is_steady(col)
 
     def can_match(self, col):
-        return self.is_steady(col)
+        return not self.is_falling(col) # TODO should be self.is_steady(col)
 
     def lock(self, col: int):
         self.states[col] = ColumnState.LOCKED

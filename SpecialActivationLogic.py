@@ -5,6 +5,15 @@ from CandyType import CandyType
 from Candy import Candy, CandyFactory
 
 
+"""
+
+TODO self._consume_source_if_present(pos_a, candy_a)
+this stuff is not done properly.
+
+ADD COMBO CANDIES AS WELL SOR SPECIAL-SPECIAL COMBOS!!! 
+IT WILL BE EASIER TO HANDLE BOTH THE COMBO HANDLING AND THE ANIMATIONS FOR LATER
+
+"""
 class SpecialActivationLogic:
     def __init__(self, board, damage_logic):
         self.board = board
@@ -133,8 +142,21 @@ class SpecialActivationLogic:
         handler = self._combo_handlers_ordered[(candy_a.type, candy_b.type)]
         if handler is None:
             return False
+
         handler(pos_a, pos_b, candy_a, candy_b)
         return True
+
+    def _consume_source_if_present(self, pos, candy):
+        if candy is None:
+            return
+
+        if not self.board.can_cell_hold_occupant(pos[0], pos[1]):
+            return
+
+        cell = self.board.get_board_element(*pos)
+        if cell.occupant is candy:
+            cell.occupant = None
+
 
     # ============================================================
     # IMPLEMENTATIONS (BASE SPECIALS)
@@ -142,19 +164,16 @@ class SpecialActivationLogic:
 
     def _rocket_h(self, pos):
         r, c = pos
-        self._apply_enhanced_damage(r, c)
         for cc in range(self.board.cols):
             self._apply_enhanced_damage(r, cc)
 
     def _rocket_v(self, pos):
         r, c = pos
-        self._apply_enhanced_damage(r, c)
         for rr in range(self.board.rows):
             self._apply_enhanced_damage(rr, c)
 
     def _bomb(self, pos):
         r, c = pos
-        self._apply_enhanced_damage(r, c)
         for dr in range(-2, 3):
             for dc in range(-2, 3):
                 self._apply_enhanced_damage(r + dr, c + dc)
@@ -196,7 +215,8 @@ class SpecialActivationLogic:
         ROCKET + ROCKET → cross rocket
         Centered on pos_b (the 'swapped-into' position)
         """
-        # destroy both originals
+        self._consume_source_if_present(pos_a, candy_a)
+        self._consume_source_if_present(pos_b, candy_b)
         self._rocket_h(pos_b)
         self._rocket_v(pos_b)
 
@@ -205,10 +225,9 @@ class SpecialActivationLogic:
         BOMB + BOMB → mega bomb (7x7)
         Centered on pos_b
         """
-        # destroy both originals
-
+        self._consume_source_if_present(pos_a, candy_a)
         r, c = pos_b
-
+        self._consume_source_if_present(pos_b, candy_b)
         # radius = 3 → 7x7
         for dr in range(-3, 4):
             for dc in range(-3, 4):
@@ -221,10 +240,9 @@ class SpecialActivationLogic:
         Cross rockets are applied even if a 3x3 position is outside the board;
         _apply_enhanced_damage safely ignores invalid cells.
         """
-        # destroy both originals
-
+        self._consume_source_if_present(pos_a, candy_a)
         center_r, center_c = pos_b
-
+        self._consume_source_if_present(pos_b, candy_b)
         # iterate 3x3 area around center
         for dr in (-1, 0, 1):
             for dc in (-1, 0, 1):
@@ -340,11 +358,11 @@ class SpecialActivationLogic:
                 continue
 
             if occ.type == CandyType.ROCKET_H:
-                for cc in range(self.board.cols):
-                    self._apply_enhanced_damage(r, cc)
+                self._consume_source_if_present(r, c)
+                self._rocket_h((r, c))
             elif occ.type == CandyType.ROCKET_V:
-                for rr in range(self.board.rows):
-                    self._apply_enhanced_damage(rr, c)
+                self._consume_source_if_present(r, c)
+                self._rocket_v((r, c))
 
             # destroy rocket after activation
             self._apply_enhanced_damage(r, c)
@@ -377,12 +395,11 @@ class SpecialActivationLogic:
                     if self.board.can_cell_hold_occupant(r + dr, c + dc):
                         affected.add((r + dr, c + dc))
 
+        for r, c in bomb_centers:
+            self._consume_source_if_present(r, c)
+
         # apply damage once per cell
         for r, c in affected:
-            self._apply_enhanced_damage(r, c)
-
-        # destroy all bombs after explosion
-        for r, c in bomb_centers:
             self._apply_enhanced_damage(r, c)
 
     def _combo_light_ball_propeller(self, pos_a, pos_b, candy_a, candy_b):

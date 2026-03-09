@@ -35,7 +35,7 @@ class Level1(Level):
 
     def set_objectives(self):
         self.layout[0][0] = Cell(
-            occupant=RocketHCandy(ColorType.YELLOW),
+            occupant=RocketVCandy(ColorType.YELLOW),
             overlay=Vines(),
             underlay=Snow(),
         )

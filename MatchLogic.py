@@ -49,7 +49,7 @@ class MatchLogic:
         Decide special candy (if any) based on pivot-centric line analysis.
         """
         pivot_candy = self.board.get_occupant(*pivot)
-        if not isinstance(pivot_candy, Candy):
+        if not isinstance(pivot_candy, Candy) or not pivot_candy.is_normal():
             return None
 
         h_len, v_len = self._analyze_pivot(cells, pivot)
