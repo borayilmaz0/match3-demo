@@ -1,51 +1,39 @@
 from BoardDesigner import BoardDesigner
 from ClearEntityObjective import ClearEntityObjective
 from GameLogic import GameLogic
-from ObjectiveManager import ObjectiveManager
-from Snow import Snow
-from Vines import Vines
+from LevelDesigner import LevelDesigner
 
 
 class LevelLogic:
-    def __init__(self, board_designer: BoardDesigner, move_count: int):
-        self.board_designer = board_designer
-        self.board = self.board_designer.board
-        self.move_count = move_count
-        self.objective_manager = ObjectiveManager()
-        self.objective_manager.add_objective(ClearEntityObjective(Vines))
-        self.objective_manager.add_objective(ClearEntityObjective(Snow))
+    def __init__(self, level_designer: LevelDesigner):
+        self.level_designer = level_designer
+        self.board_designer = self.level_designer.board_designer
+        self.game_logic = GameLogic(self.board_designer.board)
 
-        self.game_logic = GameLogic(self.board)
     def start_game(self):
-        for r in range(self.board.rows):
-            for c in range(self.board.cols):
-                cell = self.board.get_board_element(r, c)
-                cell.add_listener(self.objective_manager)
-        self.objective_manager.start(self.board)
-        while self.move_count > 0 and not self.objective_manager.all_completed():
+        self.level_designer.set_objectives()
+        while self.level_designer.level.moves > 0 and not self.level_designer.objective_manager.all_completed():
             while self.game_logic.deadlock_logic.find_any_valid_swap() is None:
                 print("no moves were found, should reshuffle normal candies, repopulating")
                 self.board_designer.repopulate_normal_candies()
-            print(f"obj:\n{self.objective_manager}")
-            print(self.board)
+            print(f"obj:\n{self.level_designer.objective_manager}")
+            print(self.board_designer.board)
 
-
-            # get a move input
-            move = input(f"enter move ({self.move_count} left):") # "tap <r>,<c>" "or swap <r1>, <c1>, up|down|left|right"
+            move = input(f"enter move ({self.level_designer.level.moves} left):") # "tap <r>,<c>" "or swap <r1>, <c1>, up|down|left|right"
             move_type, coordinates = self._resolve_move(move)
             if move_type == "invalid":
                 print("invalid move")
             elif move_type == "swap":
                 if self.game_logic.try_swap(coordinates[0][0], coordinates[0][1], coordinates[1][0], coordinates[1][1]):
-                    self.move_count -= 1
+                    self.level_designer.level.moves -= 1
                 else:
                     print("invalid swap")
             elif move_type == "tap":
                 if self.game_logic.tap(coordinates[0][0], coordinates[0][1]):
-                    self.move_count -= 1
+                    self.level_designer.level.moves -= 1
                 else:
                     print("invalid tap")
-        if self.objective_manager.all_completed():
+        if self.level_designer.objective_manager.all_completed():
             print("game win!!!")
             return True
         else:
@@ -93,7 +81,7 @@ class LevelLogic:
 
                 return "swap", [(r, c), (r2, c2)]
 
-        except Exception:
+        except ValueError:
             return "invalid", None
 
         return "invalid", None

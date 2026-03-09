@@ -1,4 +1,4 @@
-from Candy import Candy
+from Candy import Candy, NormalCandy
 from CandyType import CandyType
 from MatchDetectionLogic import MatchDetectionLogic
 
@@ -23,6 +23,9 @@ class DeadlockDetectionLogic:
     # Check whether a specific swap is valid
     # ------------------------------------------------------------
     def _is_valid_swap(self, r1, c1, r2, c2):
+        if not self.board.can_swap(r1, c1, r2, c2):
+            return False
+
         if abs(r1 - r2) + abs(c1 - c2) != 1:
             return False
 
@@ -30,9 +33,8 @@ class DeadlockDetectionLogic:
         b = self.board.get_occupant(r2, c2)
 
         if (
-            not isinstance(a, Candy)
-            or not isinstance(b, Candy)
-            or a.type != CandyType.NORMAL
+            not isinstance(a, NormalCandy)
+            or not isinstance(b, NormalCandy)
             or a == b
         ):
             return False
@@ -76,7 +78,6 @@ class DeadlockDetectionLogic:
                 if r + 1 < rows and self.board.can_cell_hold_occupant(r + 1, c):
                     if self._is_valid_swap(r, c, r + 1, c):
                         print("found valid swap:", r, c, r + 1, c)
-
                         return (r, c), (r + 1, c)
 
         return None

@@ -1,7 +1,7 @@
 import random
 
 from Board import Board
-from Candy import Candy
+from Candy import Candy, NormalCandy
 from CandyType import CandyType
 
 
@@ -61,16 +61,16 @@ class BoardDesigner:
     def __is_normal_candy(self, occ):
         return isinstance(occ, Candy) and occ.type == CandyType.NORMAL
 
-    def populate_random_candies(self, board):
+    def populate_random_candies(self):
         """
         Phase 3: fill cells with random NORMAL candies
         """
-        for r in range(board.rows):
-            for c in range(board.cols):
-                if not board.can_cell_hold_occupant(r, c):
+        for r in range(self.board.rows):
+            for c in range(self.board.cols):
+                if not self.board.can_cell_hold_occupant(r, c):
                     continue
 
-                cell = board.get_board_element(r, c)
+                cell = self.board.get_board_element(r, c)
                 if cell.occupant is None:
                     self._place_candy(r, c)
 
@@ -113,4 +113,4 @@ class BoardDesigner:
         if not choices:
             raise RuntimeError("No valid colors available during initialization")
 
-        self.board.get_board_element(r, c).occupant = Candy(random.choice(tuple(choices)))
+        self.board.get_board_element(r, c).occupant = NormalCandy(random.choice(tuple(choices)))

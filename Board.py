@@ -1,5 +1,5 @@
-import random
 from Cell import Cell
+from ColumnStateManager import ColumnStateManager
 
 
 class Board:
@@ -7,6 +7,7 @@ class Board:
         self.rows = rows
         self.cols = cols
         self.color_set = list(color_set)
+        self.column_states = ColumnStateManager(self.cols)
 
         # Board structure (Cell / GapCell)
         if board_layout is None:
@@ -63,18 +64,19 @@ class Board:
     # Swap validation
     # --------------------------------------------------
     def can_swap(self, r1, c1, r2, c2) -> bool:
-        # adjacency
-        if abs(r1 - r2) + abs(c1 - c2) != 1:
-            return False
-
         try:
+            if abs(r1 - r2) + abs(c1 - c2) != 1:
+                return False
+
+            if not self.column_states.can_interact(c1) or not self.column_states.can_interact(c2):
+                return False
+
             cell1 = self.get_board_element(r1, c1)
             cell2 = self.get_board_element(r2, c2)
+
+            if not cell1.can_swap() or not cell2.can_swap():
+                return False
+
+            return True
         except IndexError:
             return False
-
-        if not cell1.can_swap() or not cell2.can_swap():
-            return False
-
-        return True
-
