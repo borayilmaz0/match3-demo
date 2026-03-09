@@ -54,7 +54,7 @@ def extract_files(input_filepath: str, output_dir: str = "extracted_files"):
 # ==========================================
 if __name__ == "__main__":
     # Define the name of the big text file containing your combined code
-    INPUT_FILE = "combined_code.txt"
+    INPUT_FILE = "all_python_files.txt"
 
     # Define where you want the split files to go
     OUTPUT_FOLDER = "match3_source"
