@@ -3,10 +3,10 @@ from ColumnState import ColumnState
 
 class ColumnStateManager:
     def __init__(self, cols):
-        self.states = [ColumnState.STABLE for _ in range(cols)]
+        self.states = [ColumnState.STEADY for _ in range(cols)]
 
-    def is_stable(self, col):
-        return self.states[col] == ColumnState.STABLE
+    def is_steady(self, col):
+        return self.states[col] == ColumnState.STEADY
 
     def is_locked(self, col):
         return self.states[col] == ColumnState.LOCKED
@@ -15,10 +15,10 @@ class ColumnStateManager:
         return self.states[col] == ColumnState.FALLING
 
     def can_interact(self, col):
-        return self.is_stable(col)
+        return self.is_steady(col)
 
     def can_match(self, col):
-        return not self.is_falling(col)
+        return self.is_steady(col)
 
     def lock(self, col: int):
         self.states[col] = ColumnState.LOCKED
@@ -34,12 +34,12 @@ class ColumnStateManager:
         for col in set(cols):
             self.start_falling(col)
 
-    def set_stable(self, col):
-        self.states[col] = ColumnState.STABLE
+    def set_steady(self, col):
+        self.states[col] = ColumnState.STEADY
 
-    def set_stable_many(self, cols):
+    def set_steady_many(self, cols):
         for col in set(cols):
-            self.set_stable(col)
+            self.set_steady(col)
 
     def any_falling(self):
         return any(s == ColumnState.FALLING for s in self.states)
