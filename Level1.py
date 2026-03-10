@@ -1,54 +1,63 @@
-# Level1.py
-from abc import ABC
-
-from CandyType import CandyType
 from Cell import Cell
 from GapCell import GapCell
 from Level import Level
 from ColorType import ColorType
 from ClearEntityObjective import ClearEntityObjective
-from Candy import Candy, RocketHCandy, BombCandy, LightBallCandy, PropellerCandy
+from Candy import *
 from Snow import Snow
 from Vines import Vines
 
 
 class Level1(Level):
+
     def __init__(self):
         super().__init__()
-        self.color_set = [ColorType.RED, ColorType.BLUE, ColorType.GREEN, ColorType.YELLOW]
-        self.moves = 20
-        self.layout = [
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()]
+        self.color_set = [
+            ColorType.RED, ColorType.BLUE, ColorType.GREEN, ColorType.YELLOW
         ]
+        self.moves = 20
         """self.layout = [
-            [Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell()]]"""
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), GapCell(), GapCell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+        ]"""
+        self.layout = [[Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()]]
         self.rows = len(self.layout)
         self.cols = len(self.layout[0])
 
         self.objectives = []
 
+    """
+    TODO lightball normal doesnt work as expected
+    """
 
     def set_objectives(self):
         self.layout[0][0] = Cell(
-            occupant=RocketHCandy(ColorType.YELLOW),
+            occupant=RocketVCandy(ColorType.YELLOW),
             overlay=Vines(),
             underlay=Snow(),
         )
 
-        self.layout[4][1] = Cell(
-            occupant=LightBallCandy(ColorType.YELLOW))
+        self.layout[1][1] = Cell(occupant=LightBallCandy(ColorType.YELLOW),
+                                 underlay=Snow())
+        self.layout[1][2] = Cell(occupant=LightBallCandy(ColorType.YELLOW),
+                                 underlay=Snow())
 
-        self.layout[4][2] = Cell(
-            occupant=PropellerCandy(ColorType.YELLOW))
-
-
-        self.objectives = [ClearEntityObjective(Vines), ClearEntityObjective(Snow)]
+        self.objectives = [
+            ClearEntityObjective(Vines),
+            ClearEntityObjective(Snow)
+        ]

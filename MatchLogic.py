@@ -1,5 +1,6 @@
 # MatchLogic.py
-from Candy import Candy, RocketVCandy, CandyFactory
+import random
+from Candy import Candy, LightBallCandy, BombCandy, RocketHCandy, PropellerCandy, RocketVCandy
 from CandyType import CandyType
 from MatchResult import MatchResult
 
@@ -8,12 +9,23 @@ class MatchLogic:
     def __init__(self, board):
         self.board = board
 
+    # ============================================================
+    # PUBLIC API
+    # ============================================================
+
     def find_best_match(self, match_cells, pivot):
+        """
+        Used after a swap where pivot is known.
+        """
         if not match_cells or pivot not in match_cells:
             return None
+
         return self._resolve_group(match_cells, pivot)
 
     def resolve_matches(self, all_matches, pivot_policy):
+        """
+        Used during cascades / combos.
+        """
         results = []
 
         for cells in all_matches:
@@ -28,9 +40,16 @@ class MatchLogic:
 
         return results
 
+    # ============================================================
+    # CORE LOGIC
+    # ============================================================
+
     def _resolve_group(self, cells, pivot):
+        """
+        Decide special candy (if any) based on pivot-centric line analysis.
+        """
         pivot_candy = self.board.get_occupant(*pivot)
-        if not isinstance(pivot_candy, Candy):
+        if not isinstance(pivot_candy, Candy) or not pivot_candy.is_normal():
             return None
 
         h_len, v_len = self._analyze_pivot(cells, pivot)
@@ -38,29 +57,36 @@ class MatchLogic:
 
         spawn_candy = None
 
+        # -----------------------------
+        # Special decision rules
+        # -----------------------------
+
         if max(h_len, v_len) >= 5:
-            spawn_candy = CandyFactory.create(
-                candy_type=CandyType.LIGHT_BALL,
-                color=pivot_candy.color
+            spawn_candy = LightBallCandy(
+                pivot_candy.color,
             )
 
         elif h_len >= 3 and v_len >= 3:
-            spawn_candy = CandyFactory.create(
-                candy_type=CandyType.BOMB,
-                color=pivot_candy.color
+            spawn_candy = BombCandy(
+                pivot_candy.color
             )
 
         elif max(h_len, v_len) == 4:
-            spawn_candy = CandyFactory.create(
-                candy_type=CandyType.ROCKET_H if h_len == 4 else CandyType.ROCKET_V,
-                color=pivot_candy.color
-            )
+            if h_len == 4:
+                spawn_candy = RocketHCandy(
+                    pivot_candy.color)
+            else:
+                spawn_candy = RocketVCandy(
+                    pivot_candy.color)
 
         elif size >= 4:
-            spawn_candy = CandyFactory.create(
-                candy_type=CandyType.PROPELLER,
-                color=pivot_candy.color
+            spawn_candy = PropellerCandy(
+                pivot_candy.color
             )
+
+        # -----------------------------
+        # Result
+        # -----------------------------
 
         return MatchResult(
             cells_to_remove=set(cells),
@@ -69,7 +95,14 @@ class MatchLogic:
             pivot_candy=pivot_candy
         )
 
+    # ============================================================
+    # HELPERS
+    # ============================================================
+
     def _analyze_pivot(self, cells, pivot):
+        """
+        Returns (horizontal_length, vertical_length)
+        """
         pr, pc = pivot
         cell_set = set(cells)
 

@@ -3,6 +3,7 @@ from ColumnStateManager import ColumnStateManager
 
 
 class Board:
+
     def __init__(self, rows, cols, color_set, board_layout=None):
         self.rows = rows
         self.cols = cols
@@ -20,6 +21,9 @@ class Board:
     # --------------------------------------------------
     def __str__(self):
         s = ""
+        for c in range(self.cols):
+            s += f"{self.column_states.states[c].name:>31}"
+        s += "\n"
         for r in range(self.rows):
             row = []
             for c in range(self.cols):
@@ -68,7 +72,8 @@ class Board:
             if abs(r1 - r2) + abs(c1 - c2) != 1:
                 return False
 
-            if not self.column_states.can_interact(c1) or not self.column_states.can_interact(c2):
+            if not self.column_states.can_interact(
+                    c1) or not self.column_states.can_interact(c2):
                 return False
 
             cell1 = self.get_board_element(r1, c1)

@@ -1,8 +1,6 @@
-# ColumnState.py
 from enum import Enum, auto
 
-
 class ColumnState(Enum):
-    STABLE = auto()
+    STEADY = auto()
     LOCKED = auto()
     FALLING = auto()

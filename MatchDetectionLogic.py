@@ -15,17 +15,17 @@ class MatchDetectionLogic:
             c: int,
             get_cell_occupant_fn=None,
     ):
+        if not self.board.column_states.can_match(c):
+            return set()
+
         if get_cell_occupant_fn is None:
             get_cell_occupant_fn = self.board.get_occupant
 
         if not self.board.can_cell_hold_occupant(r, c):
             return set()
 
-        if not self.board.column_states.can_match(c):
-            return set()
-
         origin = get_cell_occupant_fn(r, c)
-        if not isinstance(origin, Candy) or not origin.is_normal():
+        if not isinstance(origin, Candy) or origin.type != CandyType.NORMAL:
             return set()
 
         matches = set()
@@ -40,7 +40,7 @@ class MatchDetectionLogic:
             b = get_cell_occupant_fn(r, cc)
             if (
                 not isinstance(b, Candy)
-                or not b.is_normal()
+                or b.type != CandyType.NORMAL
                 or b.color != origin.color
             ):
                 break
@@ -52,7 +52,7 @@ class MatchDetectionLogic:
             b = get_cell_occupant_fn(r, cc)
             if (
                 not isinstance(b, Candy)
-                or not b.is_normal()
+                or b.type != CandyType.NORMAL
                 or b.color != origin.color
             ):
                 break
@@ -72,7 +72,7 @@ class MatchDetectionLogic:
             b = get_cell_occupant_fn(rr, c)
             if (
                 not isinstance(b, Candy)
-                or not b.is_normal()
+                or b.type != CandyType.NORMAL
                 or b.color != origin.color
             ):
                 break
@@ -84,7 +84,7 @@ class MatchDetectionLogic:
             b = get_cell_occupant_fn(rr, c)
             if (
                 not isinstance(b, Candy)
-                or not b.is_normal()
+                or b.type != CandyType.NORMAL
                 or b.color != origin.color
             ):
                 break
@@ -120,7 +120,7 @@ class MatchDetectionLogic:
                 ]
 
                 if any(
-                    not isinstance(b, Candy) or not b.is_normal()
+                    not isinstance(b, Candy) or b.type != CandyType.NORMAL
                     for b in blocks
                 ):
                     continue
@@ -134,27 +134,23 @@ class MatchDetectionLogic:
     # ------------------------------------------------------------
     # Collect all matches on the board
     # ------------------------------------------------------------
-    def collect_all_matches(self, origin_columns=None):
+    def collect_all_matches(self):
         visited = set()
         matches = []
-        origin_columns = set(origin_columns) if origin_columns is not None else None
 
         for r in range(self.board.rows):
             for c in range(self.board.cols):
                 if (r, c) in visited:
                     continue
 
-                if origin_columns is not None and c not in origin_columns:
+                if not self.board.column_states.can_match(c):
                     continue
 
                 if not self.board.can_cell_hold_occupant(r, c):
                     continue
 
-                if not self.board.column_states.can_match(c):
-                    continue
-
                 origin = self.board.get_board_element(r, c).occupant
-                if not isinstance(origin, Candy) or not origin.is_normal():
+                if not isinstance(origin, Candy) or origin.type != CandyType.NORMAL:
                     continue
 
                 match = self.collect_matches_at(r, c)

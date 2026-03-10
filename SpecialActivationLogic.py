@@ -3,13 +3,16 @@ from DamageContext import DamageContext
 from DamageType import DamageType
 from CandyType import CandyType
 from Candy import Candy, CandyFactory
+from MatchResult import MatchResult
 
 
 class SpecialActivationLogic:
+
     def __init__(self, board, damage_logic):
         self.board = board
         self.damage_logic = damage_logic
         self._impacted_columns = set()
+        self._activating_positions = set()
 
         # ------------------------------------------------------------
         # Handler registries
@@ -17,55 +20,80 @@ class SpecialActivationLogic:
 
         # Swap activation: handler(pos, candy, neighbor_candy) -> bool or None
         self._swap_handlers = {
-            CandyType.LIGHT_BALL: self._swap_light_ball,
-            CandyType.ROCKET_H: lambda pos, candy, neighbor: self._rocket_h(pos),
-            CandyType.ROCKET_V: lambda pos, candy, neighbor: self._rocket_v(pos),
-            CandyType.BOMB: lambda pos, candy, neighbor: self._bomb(pos),
-            CandyType.PROPELLER: lambda pos, candy, neighbor: self._propeller(pos, pre_damage=True),
+            CandyType.ROCKET_H:
+            lambda pos, candy, neighbor: self._rocket_h(pos),
+            CandyType.ROCKET_V:
+            lambda pos, candy, neighbor: self._rocket_v(pos),
+            CandyType.BOMB:
+            lambda pos, candy, neighbor: self._bomb(pos),
+            CandyType.PROPELLER:
+            lambda pos, candy, neighbor: self._propeller(pos, pre_damage=True),
         }
 
         # Hit activation: handler(pos, candy) -> None
         self._hit_handlers = {
-            CandyType.ROCKET_H: lambda pos, candy: self._rocket_h(pos),
-            CandyType.ROCKET_V: lambda pos, candy: self._rocket_v(pos),
-            CandyType.BOMB: lambda pos, candy: self._bomb(pos),
-            CandyType.PROPELLER: lambda pos, candy: self._propeller(pos, pre_damage=True),
-            CandyType.LIGHT_BALL: lambda pos, candy: self._light_ball_from_swap(
-                pos, random.choice(list(self.board.color_set))
-            ),
+            CandyType.ROCKET_H:
+            lambda pos, candy: self._rocket_h(pos),
+            CandyType.ROCKET_V:
+            lambda pos, candy: self._rocket_v(pos),
+            CandyType.BOMB:
+            lambda pos, candy: self._bomb(pos),
+            CandyType.PROPELLER:
+            lambda pos, candy: self._propeller(pos, pre_damage=True),
+            CandyType.LIGHT_BALL:
+            lambda pos, candy: self._light_ball_on_hit(
+                pos, random.choice(list(self.board.color_set))),
         }
 
         # Ordered combos: (type_a, type_b) means "a swapped into b"
         # handler(pos_a, pos_b, candy_a, candy_b) -> None
         self._combo_handlers_ordered = {
-            (CandyType.ROCKET_H, CandyType.ROCKET_H): lambda pos_a, pos_b, candy_a, candy_b: self._combo_cross_rocket(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_H, CandyType.ROCKET_V): lambda pos_a, pos_b, candy_a, candy_b: self._combo_cross_rocket(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_V, CandyType.ROCKET_H): lambda pos_a, pos_b, candy_a, candy_b: self._combo_cross_rocket(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_V, CandyType.ROCKET_V): lambda pos_a, pos_b, candy_a, candy_b: self._combo_cross_rocket(pos_a, pos_b, candy_a, candy_b),
+            # ---------------------------------------------------------
+            # ROCKET + ROCKET
+            # ---------------------------------------------------------
+            (CandyType.ROCKET_H, CandyType.ROCKET_H): self._combo_cross_rocket,
+            (CandyType.ROCKET_H, CandyType.ROCKET_V): self._combo_cross_rocket,
+            (CandyType.ROCKET_V, CandyType.ROCKET_H): self._combo_cross_rocket,
+            (CandyType.ROCKET_V, CandyType.ROCKET_V): self._combo_cross_rocket,
 
-            (CandyType.BOMB, CandyType.BOMB):       lambda pos_a, pos_b, candy_a, candy_b: self._combo_mega_bomb(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_H, CandyType.BOMB):   lambda pos_a, pos_b, candy_a, candy_b: self._combo_rocket_bomb(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_V, CandyType.BOMB):   lambda pos_a, pos_b, candy_a, candy_b: self._combo_rocket_bomb(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.BOMB, CandyType.ROCKET_H):   lambda pos_a, pos_b, candy_a, candy_b: self._combo_rocket_bomb(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.BOMB, CandyType.ROCKET_V):   lambda pos_a, pos_b, candy_a, candy_b: self._combo_rocket_bomb(pos_a, pos_b, candy_a, candy_b),
+            # ---------------------------------------------------------
+            # BOMB COMBOS
+            # ---------------------------------------------------------
+            (CandyType.BOMB, CandyType.BOMB): self._combo_mega_bomb,
+            (CandyType.ROCKET_H, CandyType.BOMB): self._combo_rocket_bomb,
+            (CandyType.ROCKET_V, CandyType.BOMB): self._combo_rocket_bomb,
+            (CandyType.BOMB, CandyType.ROCKET_H): self._combo_rocket_bomb,
+            (CandyType.BOMB, CandyType.ROCKET_V): self._combo_rocket_bomb,
 
-            (CandyType.PROPELLER, CandyType.PROPELLER): lambda pos_a, pos_b, candy_a, candy_b: self._combo_propeller_propeller(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.PROPELLER, CandyType.ROCKET_H):  lambda pos_a, pos_b, candy_a, candy_b: self._combo_propeller_rocket_h(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.PROPELLER, CandyType.ROCKET_V):  lambda pos_a, pos_b, candy_a, candy_b: self._combo_propeller_rocket_v(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.PROPELLER, CandyType.BOMB):      lambda pos_a, pos_b, candy_a, candy_b: self._combo_propeller_bomb(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_H, CandyType.PROPELLER):  lambda pos_a, pos_b, candy_a, candy_b: self._combo_propeller_rocket_h(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_V, CandyType.PROPELLER):  lambda pos_a, pos_b, candy_a, candy_b: self._combo_propeller_rocket_v(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.BOMB, CandyType.PROPELLER):      lambda pos_a, pos_b, candy_a, candy_b: self._combo_propeller_bomb(pos_a, pos_b, candy_a, candy_b),
+            # ---------------------------------------------------------
+            # PROPELLER COMBOS
+            # ---------------------------------------------------------
+            (CandyType.PROPELLER, CandyType.PROPELLER): self._combo_propeller_propeller,
+            (CandyType.PROPELLER, CandyType.ROCKET_H): self._combo_propeller_rocket_h,
+            (CandyType.PROPELLER, CandyType.ROCKET_V): self._combo_propeller_rocket_v,
+            (CandyType.ROCKET_H, CandyType.PROPELLER): self._combo_propeller_rocket_h,
+            (CandyType.ROCKET_V, CandyType.PROPELLER): self._combo_propeller_rocket_v,
+            (CandyType.PROPELLER, CandyType.BOMB): self._combo_propeller_bomb,
+            (CandyType.BOMB, CandyType.PROPELLER): self._combo_propeller_bomb,
 
-            (CandyType.LIGHT_BALL, CandyType.ROCKET_H): lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_rocket(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.LIGHT_BALL, CandyType.ROCKET_V): lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_rocket(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_H, CandyType.LIGHT_BALL): lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_rocket(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.ROCKET_V, CandyType.LIGHT_BALL): lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_rocket(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.LIGHT_BALL, CandyType.BOMB):     lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_bomb(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.BOMB, CandyType.LIGHT_BALL):     lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_bomb(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.LIGHT_BALL, CandyType.PROPELLER):    lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_propeller(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.PROPELLER, CandyType.LIGHT_BALL):    lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_propeller(pos_a, pos_b, candy_a, candy_b),
-            (CandyType.LIGHT_BALL, CandyType.LIGHT_BALL):   lambda pos_a, pos_b, candy_a, candy_b: self._combo_light_ball_light_ball(pos_a, pos_b, candy_a, candy_b),
+            # ---------------------------------------------------------
+            # LIGHT BALL COMBOS
+            # ---------------------------------------------------------
+            (CandyType.LIGHT_BALL, CandyType.NORMAL): self._combo_light_ball_normal,
+            (CandyType.NORMAL, CandyType.LIGHT_BALL): self._combo_light_ball_normal,
+
+            (CandyType.LIGHT_BALL, CandyType.ROCKET_H): self._combo_light_ball_rocket,
+            (CandyType.LIGHT_BALL, CandyType.ROCKET_V): self._combo_light_ball_rocket,
+            (CandyType.ROCKET_H, CandyType.LIGHT_BALL): self._combo_light_ball_rocket,
+            (CandyType.ROCKET_V, CandyType.LIGHT_BALL): self._combo_light_ball_rocket,
+
+            (CandyType.LIGHT_BALL, CandyType.BOMB): self._combo_light_ball_bomb,
+            (CandyType.BOMB, CandyType.LIGHT_BALL): self._combo_light_ball_bomb,
+
+            (CandyType.LIGHT_BALL, CandyType.PROPELLER): self._combo_light_ball_propeller,
+            (CandyType.PROPELLER, CandyType.LIGHT_BALL): self._combo_light_ball_propeller,
+
+            (CandyType.LIGHT_BALL, CandyType.LIGHT_BALL): self._combo_light_ball_light_ball,
         }
 
     def _collect_normal_candies_of_color(self, color):
@@ -76,9 +104,12 @@ class SpecialActivationLogic:
                     continue
                 cell = self.board.get_board_element(r, c)
                 occ = cell.occupant
-                if isinstance(occ, Candy) and occ.type == CandyType.NORMAL and occ.color == color:
+                if isinstance(
+                        occ, Candy
+                ) and occ.type == CandyType.NORMAL and occ.color == color:
                     positions.append((r, c))
         return positions
+
     # ============================================================
     # PUBLIC API
     # ============================================================
@@ -95,17 +126,25 @@ class SpecialActivationLogic:
         handler(pos, candy, neighbor_candy)
         return True
 
-    def activate_on_hit(self, pos, candy):
-        self._impacted_columns.clear()
+    def activate_on_hit(self, pos, candy, ctx=None):
         if candy is None:
             return False
-
+        if pos in self._activating_positions:
+            return False
         handler = self._hit_handlers.get(candy.type)
         if handler is None:
             return False
 
-        handler(pos, candy)
-        return True
+        self._activating_positions.add(pos)
+        try:
+            cell = self.board.get_board_element(*pos)
+            if cell.occupant is candy:
+                cell.occupant = None
+
+            handler(pos, candy)
+            return True
+        finally:
+            self._activating_positions.remove(pos)
 
     # ============================================================
     # ORDERED SWAP COMBOS (INFRASTRUCTURE ONLY)
@@ -124,8 +163,18 @@ class SpecialActivationLogic:
         handler = self._combo_handlers_ordered[(candy_a.type, candy_b.type)]
         if handler is None:
             return False
+
         handler(pos_a, pos_b, candy_a, candy_b)
         return True
+
+    def _consume_occupant_if_present(self, pos):
+
+        if not self.board.can_cell_hold_occupant(pos[0], pos[1]):
+            return
+
+        cell = self.board.get_board_element(*pos)
+        if cell.occupant is not None:
+            cell.occupant = None
 
     # ============================================================
     # IMPLEMENTATIONS (BASE SPECIALS)
@@ -133,23 +182,19 @@ class SpecialActivationLogic:
 
     def _rocket_h(self, pos):
         r, c = pos
-        self._apply_enhanced_damage(r, c)
         for cc in range(self.board.cols):
             self._apply_enhanced_damage(r, cc)
 
     def _rocket_v(self, pos):
         r, c = pos
-        self._apply_enhanced_damage(r, c)
         for rr in range(self.board.rows):
             self._apply_enhanced_damage(rr, c)
 
     def _bomb(self, pos):
         r, c = pos
-        self._apply_enhanced_damage(r, c)
         for dr in range(-2, 3):
             for dc in range(-2, 3):
                 self._apply_enhanced_damage(r + dr, c + dc)
-
 
     def _propeller(self, pos, pre_damage):
         r, c = pos
@@ -161,7 +206,7 @@ class SpecialActivationLogic:
         target = self._find_random_valid_target()
         self._apply_enhanced_damage(*target)
 
-    def _light_ball_from_swap(self, pos, color):
+    def _light_ball_on_hit(self, pos, color):
         for r in range(self.board.rows):
             for c in range(self.board.cols):
                 if not self.board.can_cell_hold_occupant(r, c):
@@ -173,8 +218,7 @@ class SpecialActivationLogic:
 
                 if cell.occupant.color == color:
                     cell.apply_damage(
-                        DamageContext(DamageType.MATCH, color=color)
-                    )
+                        DamageContext(DamageType.MATCH, color=color))
 
         self._apply_enhanced_damage(pos[0], pos[1])
 
@@ -187,23 +231,26 @@ class SpecialActivationLogic:
         ROCKET + ROCKET → cross rocket
         Centered on pos_b (the 'swapped-into' position)
         """
-        # destroy both originals
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
+        print("before action:\n", self.board)
         self._rocket_h(pos_b)
         self._rocket_v(pos_b)
+        print("after action:\n", self.board)
 
     def _combo_mega_bomb(self, pos_a, pos_b, candy_a, candy_b):
         """
         BOMB + BOMB → mega bomb (7x7)
         Centered on pos_b
         """
-        # destroy both originals
-
         r, c = pos_b
-
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
         # radius = 3 → 7x7
         for dr in range(-3, 4):
             for dc in range(-3, 4):
                 self._apply_enhanced_damage(r + dr, c + dc)
+        print("after action:\n", self.board)
 
     def _combo_rocket_bomb(self, pos_a, pos_b, candy_a, candy_b):
         """
@@ -212,35 +259,30 @@ class SpecialActivationLogic:
         Cross rockets are applied even if a 3x3 position is outside the board;
         _apply_enhanced_damage safely ignores invalid cells.
         """
-        # destroy both originals
-
         center_r, center_c = pos_b
-
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
+        print("before action:\n", self.board)
         # iterate 3x3 area around center
         for dr in (-1, 0, 1):
-            for dc in (-1, 0, 1):
-                r = center_r + dr
-                c = center_c + dc
-
-                # horizontal beam at (r, c)
-                for cc in range(self.board.cols):
-                    self._apply_enhanced_damage(r, cc)
-
-                # vertical beam at (r, c)
-                for rr in range(self.board.rows):
-                    self._apply_enhanced_damage(rr, c)
+            pos_h = (center_r + dr, center_c)
+            self._rocket_h(pos_h)
+        for dc in (-1, 0, 1):
+            pos_h = (center_r, center_c + dc)
+            self._rocket_v(pos_h)
+        print("after action:\n", self.board)
 
     def _combo_propeller_rocket_h(self, pos_a, pos_b, candy_a, candy_b):
         """
         Propeller carries a horizontal rocket.
         """
-        # 1) propeller spin damage at swap center
+
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
+
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
         self._propeller_neighbor_damage(pos_b)
 
-        # 2) destroy both originals
-        self._apply_enhanced_damage(pos_b[0], pos_b[1])
-
-        # 3) fly to random target
         target = self._find_random_valid_target()
         if not target:
             return
@@ -253,9 +295,11 @@ class SpecialActivationLogic:
         """
         Propeller carries a vertical rocket.
         """
-        self._propeller_neighbor_damage(pos_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
 
         self._apply_enhanced_damage(pos_b[0], pos_b[1])
+        self._propeller_neighbor_damage(pos_b)
 
         target = self._find_random_valid_target()
         if not target:
@@ -269,9 +313,12 @@ class SpecialActivationLogic:
         """
         Propeller carries a bomb.
         """
-        self._propeller_neighbor_damage(pos_b)
+
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
 
         self._apply_enhanced_damage(pos_b[0], pos_b[1])
+        self._propeller_neighbor_damage(pos_b)
 
         target = self._find_random_valid_target()
         if not target:
@@ -289,13 +336,13 @@ class SpecialActivationLogic:
         - Destroy both originals
         - Spawn 3 propeller flights (no neighbor damage)
         """
-        # 1) pre-damage at center
+
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
+
+        self._apply_enhanced_damage(pos_b[0], pos_b[1])
         self._propeller_neighbor_damage(pos_b)
 
-        # 2) destroy both originals
-        self._apply_enhanced_damage(pos_b[0], pos_b[1])
-
-        # 3) fly three independent propellers
         for _ in range(3):
             target = self._find_random_valid_target()
             if not target:
@@ -303,26 +350,32 @@ class SpecialActivationLogic:
             self._apply_enhanced_damage(*target)
 
     def _combo_light_ball_rocket(self, pos_a, pos_b, candy_a, candy_b):
-        """
-        LIGHT BALL + ROCKET
-        - Light ball remains
-        - Rocket is destroyed
-        - Pick random color
-        - Turn all NORMAL candies of that color into random rockets
-        - Trigger rockets ONE BY ONE
-        """
         # identify which is light ball
         light_pos = pos_a if candy_a.type == CandyType.LIGHT_BALL else pos_b
-        other_pos = pos_b if light_pos == pos_a else pos_a
-
+        other_type = candy_b.type if light_pos == pos_a else candy_a.type
         target_color = random.choice(list(self.board.color_set))
+
+        self._consume_occupant_if_present(pos_a)
+        self.board.get_board_element(pos_b[0],
+                                     pos_b[1]).occupant = CandyFactory.create(
+                                         CandyType.LIGHT_BALL, target_color)
+
+
 
         rocket_positions = []
         for r, c in self._collect_normal_candies_of_color(target_color):
+            print("next position", r, c)
             new_type = random.choice([CandyType.ROCKET_H, CandyType.ROCKET_V])
-            self.board.get_board_element(r, c).occupant = CandyFactory.create(new_type, target_color)
+            self.board.get_board_element(r, c).occupant = CandyFactory.create(
+                new_type, target_color)
             rocket_positions.append((r, c))
+            print("added", self.board.get_board_element(r, c))
+        self.board.get_board_element(
+            pos_b[0], pos_b[1]).occupant = CandyFactory.create(
+                other_type, target_color)
         rocket_positions.append(pos_b)
+
+        print("before action:\n", self.board)
 
         # trigger rockets sequentially
         for r, c in rocket_positions:
@@ -331,34 +384,37 @@ class SpecialActivationLogic:
                 continue
 
             if occ.type == CandyType.ROCKET_H:
-                for cc in range(self.board.cols):
-                    self._apply_enhanced_damage(r, cc)
+                self._consume_occupant_if_present((r, c))
+                self._rocket_h((r, c))
             elif occ.type == CandyType.ROCKET_V:
-                for rr in range(self.board.rows):
-                    self._apply_enhanced_damage(rr, c)
+                self._consume_occupant_if_present((r, c))
+                self._rocket_v((r, c))
 
             # destroy rocket after activation
             self._apply_enhanced_damage(r, c)
 
     def _combo_light_ball_bomb(self, pos_a, pos_b, candy_a, candy_b):
-        """
-        LIGHT BALL + BOMB
-        - Light ball remains
-        - Bomb is destroyed
-        - Pick random color
-        - Turn all NORMAL candies of that color into bombs
-        - Apply ALL bomb explosions at once (no stacking)
-        """
         # identify which is light ball
         light_pos = pos_a if candy_a.type == CandyType.LIGHT_BALL else pos_b
-        other_pos = pos_b if light_pos == pos_a else pos_a
-
+        other_type = candy_b.type if light_pos == pos_a else candy_a.type
         target_color = random.choice(list(self.board.color_set))
+
+        self._consume_occupant_if_present(pos_a)
+        self.board.get_board_element(pos_b[0],
+                                     pos_b[1]).occupant = CandyFactory.create(
+                                         CandyType.LIGHT_BALL, target_color)
 
         bomb_centers = []
         for r, c in self._collect_normal_candies_of_color(target_color):
-            self.board.get_board_element(r, c).occupant = CandyFactory.create(CandyType.BOMB, target_color)
+            self.board.get_board_element(r, c).occupant = CandyFactory.create(
+                other_type, target_color)
             bomb_centers.append((r, c))
+        self.board.get_board_element(
+            pos_b[0], pos_b[1]).occupant = CandyFactory.create(
+                other_type, target_color)
+        bomb_centers.append(pos_b)
+
+        print("before action:\n", self.board)
 
         # collect affected cells (set prevents stacking)
         affected = set()
@@ -368,51 +424,39 @@ class SpecialActivationLogic:
                     if self.board.can_cell_hold_occupant(r + dr, c + dc):
                         affected.add((r + dr, c + dc))
 
+        for r, c in bomb_centers:
+            self._consume_occupant_if_present((r, c))
+
         # apply damage once per cell
         for r, c in affected:
             self._apply_enhanced_damage(r, c)
 
-        # destroy all bombs after explosion
-        for r, c in bomb_centers:
-            self._apply_enhanced_damage(r, c)
-
     def _combo_light_ball_propeller(self, pos_a, pos_b, candy_a, candy_b):
-        """
-        LIGHT BALL + PROPELLER
-        - Light ball remains
-        - Propeller is destroyed
-        - Convert NORMAL candies of random color into propellers
-        - Each propeller:
-            * applies enhanced damage to its own cell
-            * flies once (no neighbor pre-damage)
-            * is destroyed
-        """
-        # identify which is light ball
         light_pos = pos_a if candy_a.type == CandyType.LIGHT_BALL else pos_b
-        other_pos = pos_b if light_pos == pos_a else pos_a
-
-        # destroy the propeller
-        self._apply_enhanced_damage(other_pos[0], other_pos[1])
-
+        other_type = candy_b.type if light_pos == pos_a else candy_a.type
         target_color = random.choice(list(self.board.color_set))
+
+        self._consume_occupant_if_present(pos_a)
+        self.board.get_board_element(pos_b[0],
+                                     pos_b[1]).occupant = CandyFactory.create(
+                                         CandyType.LIGHT_BALL, target_color)
 
         prop_positions = []
         for r, c in self._collect_normal_candies_of_color(target_color):
-            self.board.get_board_element(r, c).occupant = CandyFactory.create(CandyType.PROPELLER, target_color)
+            self.board.get_board_element(r, c).occupant = CandyFactory.create(
+                CandyType.PROPELLER, target_color)
             prop_positions.append((r, c))
+        self.board.get_board_element(
+            pos_b[0], pos_b[1]).occupant = CandyFactory.create(
+                other_type, target_color)
+        prop_positions.append(pos_b)
+
+        print("before action:\n", self.board)
 
         # activate propellers one by one
         for r, c in prop_positions:
-            # apply enhanced damage to its own cell
-            self._apply_enhanced_damage(r, c)
-
-            # fly once (no neighbor pre-damage)
-            target = self._find_random_valid_target()
-            if target:
-                self._apply_enhanced_damage(*target)
-
-            # destroy propeller after action
-            self._apply_enhanced_damage(r, c)
+            self._consume_occupant_if_present((r, c))
+            self._propeller((r, c), pre_damage=False)
 
     def _combo_light_ball_light_ball(self, pos_a, pos_b, candy_a, candy_b):
         """
@@ -421,37 +465,73 @@ class SpecialActivationLogic:
         - Apply exactly ONE enhanced damage to every valid cell
         """
         # destroy both light balls
-        self._apply_enhanced_damage(pos_a[0], pos_a[1])
-        self._apply_enhanced_damage(pos_b[0], pos_b[1])
+        self._consume_occupant_if_present(pos_a)
 
+        self._consume_occupant_if_present(pos_b)
         for r in range(self.board.rows):
             for c in range(self.board.cols):
                 if self.board.can_cell_hold_occupant(r, c):
                     self._apply_enhanced_damage(r, c)
 
+    def _combo_light_ball_normal(self, pos_a, pos_b, candy_a, candy_b):
+        light_pos = pos_a if candy_a.type == CandyType.LIGHT_BALL else pos_b
+        other_candy = candy_a if not candy_a.type == CandyType.LIGHT_BALL else candy_b
+        target_color = other_candy.color
+
+        self._consume_occupant_if_present(pos_a)
+        self.board.get_board_element(pos_b[0],
+                                     pos_b[1]).occupant = CandyFactory.create(
+                                         CandyType.LIGHT_BALL, target_color)
+
+        normal_positions = []
+        asd = self._collect_normal_candies_of_color(target_color)
+        for r, c in asd:
+            normal_positions.append((r, c))
+        normal_positions.append(pos_b)
+        match_res = MatchResult(normal_positions, pivot_candy=self.board.get_board_element(pos_b[0],
+                                     pos_b[1]).occupant)
+
+        print("before action:\n", self.board)
+
+        self.damage_logic.apply_match_result(match_res)
+
+        print("after action:\n", self.board)
+        print()
+
     # ============================================================
     # HELPERS
     # ============================================================
-
-    def _swap_light_ball(self, pos, candy, neighbor_candy) -> bool:
-        target_color = (
-            neighbor_candy.color
-            if neighbor_candy.color is not None
-            else random.choice(list(self.board.color_set))
-        )
-
-        self._light_ball_from_swap(pos, target_color)
-        return True
 
     def _apply_enhanced_damage(self, r, c):
         if not self.board.can_cell_hold_occupant(r, c):
             return
 
         cell = self.board.get_board_element(r, c)
+        if cell.occupant is None and cell.overlay is None and cell.underlay is None:
+            return
 
-        cell.apply_damage(
-            DamageContext(DamageType.ENHANCED)
-        )
+        self._impacted_columns.add(c)
+
+        self.damage_logic.apply_damage_at((r, c),
+                                          DamageContext(DamageType.ENHANCED))
+
+    def _apply_match_damage(self, r, c):
+        if not self.board.can_cell_hold_occupant(r, c):
+            return
+
+        cell = self.board.get_board_element(r, c)
+        if cell.occupant is None and cell.overlay is None and cell.underlay is None:
+            return
+
+        self._impacted_columns.add(c)
+
+        self.damage_logic.apply_damage_at((r, c),
+                                          DamageContext(DamageType.MATCH))
+
+    def consume_impacted_columns(self):
+        cols = set(self._impacted_columns)
+        self._impacted_columns.clear()
+        return cols
 
     def _propeller_neighbor_damage(self, pos):
         r, c = pos

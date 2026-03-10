@@ -1,4 +1,3 @@
-# ===== Candy.py =====
 from abc import ABC
 
 from BasicMatchable import BasicMatchable
@@ -13,18 +12,6 @@ from DamageType import DamageType
 
 
 class Candy(CellOccupant, ABC):
-    """
-    Abstract candy base class.
-
-    Cells should only ever hold concrete candy subclasses such as:
-    - NormalCandy
-    - RocketHCandy
-    - RocketVCandy
-    - BombCandy
-    - LightBallCandy
-    - PropellerCandy
-    """
-
     __slots__ = ("color",)
     candy_type = None
 
@@ -62,12 +49,7 @@ class Candy(CellOccupant, ABC):
     def is_normal(self) -> bool:
         return not self.is_special()
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        """Hook for explicit swap activation."""
-        return False
-
-    def on_hit(self, special_logic, pos) -> bool:
-        """Hook for indirect activation from another effect."""
+    def on_hit(self, special_logic, pos, ctx=None) -> bool:
         return False
 
     def __str__(self):
@@ -81,8 +63,6 @@ class Candy(CellOccupant, ABC):
         )
 
 
-
-
 class NormalCandy(Candy):
     candy_type = CandyType.NORMAL
 
@@ -94,65 +74,29 @@ class SpecialCandy(Candy, ABC):
     def is_special(self) -> bool:
         return True
 
+    def on_hit(self, special_logic, pos, ctx=None) -> bool:
+        return special_logic.activate_on_hit(pos, self, ctx)
+
 
 class RocketHCandy(SpecialCandy):
     candy_type = CandyType.ROCKET_H
-
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_rocket(pos, horizontal=True)
-        return True
-
-    def on_hit(self, special_logic, pos) -> bool:
-        special_logic.trigger_rocket(pos, horizontal=True)
-        return True
 
 
 class RocketVCandy(SpecialCandy):
     candy_type = CandyType.ROCKET_V
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_rocket(pos, horizontal=False)
-        return True
-
-    def on_hit(self, special_logic, pos) -> bool:
-        special_logic.trigger_rocket(pos, horizontal=False)
-        return True
-
 
 class BombCandy(SpecialCandy):
     candy_type = CandyType.BOMB
-
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_bomb(pos)
-        return True
-
-    def on_hit(self, special_logic, pos) -> bool:
-        special_logic.trigger_bomb(pos)
-        return True
 
 
 class LightBallCandy(SpecialCandy):
     candy_type = CandyType.LIGHT_BALL
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        if neighbor_candy is None:
-            return False
-        return special_logic.trigger_light_ball_swap(pos, neighbor_candy)
-
-    def on_hit(self, special_logic, pos) -> bool:
-        return special_logic.trigger_light_ball_hit(pos)
-
 
 class PropellerCandy(SpecialCandy):
     candy_type = CandyType.PROPELLER
 
-    def on_swap(self, special_logic, pos, neighbor_candy) -> bool:
-        special_logic.trigger_propeller(pos, pre_damage=True)
-        return True
-
-    def on_hit(self, special_logic, pos) -> bool:
-        special_logic.trigger_propeller(pos, pre_damage=True)
-        return True
 
 class CandyFactory:
     @staticmethod

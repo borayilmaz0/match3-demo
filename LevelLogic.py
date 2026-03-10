@@ -1,3 +1,5 @@
+from time import sleep
+
 from BoardDesigner import BoardDesigner
 from ClearEntityObjective import ClearEntityObjective
 from GameLogic import GameLogic
@@ -16,6 +18,7 @@ class LevelLogic:
             while self.game_logic.deadlock_logic.find_any_valid_swap() is None:
                 print("no moves were found, should reshuffle normal candies, repopulating")
                 self.board_designer.repopulate_normal_candies()
+                sleep(0.1)
             print(f"obj:\n{self.level_designer.objective_manager}")
             print(self.board_designer.board)
 

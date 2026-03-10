@@ -1,4 +1,3 @@
-from BasicDamageable import BasicDamageable
 from BoardElement import BoardElement
 from CellOccupant import CellOccupant
 from CellOverlay import CellOverlay
@@ -9,7 +8,6 @@ from Damageable import Damageable
 from GameEvents import EntityClearedEvent
 from MatchBlocking import MatchBlocking
 from Swappable import Swappable
-from CellEntityClearedEvent import CellEntityClearedEvent
 
 
 class Cell(BoardElement):
@@ -69,11 +67,12 @@ class Cell(BoardElement):
 
     # ---------- damage routing ----------
 
-    def apply_damage(self, ctx: DamageContext, event_sink = None):
+    def apply_damage(self, ctx: DamageContext, pos=None):
         """
         Damage priority:
         overlay -> occupant -> underlay
         """
+        damage_given = False
         for entity in (self.overlay, self.occupant, self.underlay):
             if not entity:
                 continue
@@ -82,18 +81,19 @@ class Cell(BoardElement):
             if not dmg or not dmg.can_take_damage(ctx):
                 continue
 
-            # Apply damage
             dmg.take_damage(ctx)
+            damage_given = True
+            reflector = entity.get(DamageReflecting)
 
-            # Remove if destroyed
             if dmg.is_destroyed():
                 self._remove_entity(entity)
 
-            # Decide whether damage continues
-            reflector = entity.get(DamageReflecting)
+
             if not reflector or not reflector.can_reflect_damage():
                 break
 
+        if damage_given:
+            ...
 
     # ---------- helpers ----------
 
