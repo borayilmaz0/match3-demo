@@ -13,7 +13,7 @@ from Swappable import Swappable
 class Cell(BoardElement):
     __slots__ = ("occupant", "overlay", "underlay", "_event_bus")
 
-    def __init__(self, occupant: CellOccupant = None, overlay: CellOverlay = None, underlay: CellUnderlay = None, event_bus = None):
+    def __init__(self, occupant: CellOccupant = None, overlay: CellOverlay = None, underlay: CellUnderlay = None, event_bus=None):
         self.occupant = occupant
         self.overlay = overlay
         self.underlay = underlay
@@ -24,8 +24,6 @@ class Cell(BoardElement):
 
     def __str__(self):
         return f"{str(self.occupant):>17}|{str(self.overlay)[:5]}|{str(self.underlay)[:5]}"
-
-    # ---------- basic state ----------
 
     def is_empty(self) -> bool:
         return self.occupant is None
@@ -40,24 +38,18 @@ class Cell(BoardElement):
         return True
 
     def can_use_cell_occupant(self):
-        # If an overlay blocks matching, the occupant should not be visible to
-        # match/deadlock detection (Board.get_occupant will return None).
         if self.overlay:
             blocker_overlay = self.overlay.get(MatchBlocking)
             if blocker_overlay and blocker_overlay.blocks_matching():
                 return False
         return True
 
-    # ---------- swap logic ----------
-
     def can_swap(self) -> bool:
-        # overlay may block swaps
         if self.overlay:
             sw = self.overlay.get(Swappable)
             if sw and not sw.can_swap():
                 return False
 
-        # occupant must be swappable
         if self.occupant:
             sw = self.occupant.get(Swappable)
             if sw and not sw.can_swap():
@@ -65,15 +57,13 @@ class Cell(BoardElement):
 
         return True
 
-    # ---------- damage routing ----------
-
     def apply_damage(self, ctx: DamageContext, pos=None):
-        """
-        Damage priority:
-        overlay -> occupant -> underlay
-        """
         damage_given = False
-        for entity in (self.overlay, self.occupant, self.underlay):
+        for layer_name, entity in (
+            ("overlay", self.overlay),
+            ("occupant", self.occupant),
+            ("underlay", self.underlay),
+        ):
             if not entity:
                 continue
 
@@ -86,18 +76,14 @@ class Cell(BoardElement):
             reflector = entity.get(DamageReflecting)
 
             if dmg.is_destroyed():
-                self._remove_entity(entity)
-
+                self._remove_entity(entity, pos=pos, layer_name=layer_name)
 
             if not reflector or not reflector.can_reflect_damage():
                 break
 
-        if damage_given:
-            ...
+        return damage_given
 
-    # ---------- helpers ----------
-
-    def _remove_entity(self, entity) -> None:
+    def _remove_entity(self, entity, pos=None, layer_name=None) -> None:
         if entity is self.overlay:
             self.overlay = None
         elif entity is self.occupant:
@@ -105,6 +91,7 @@ class Cell(BoardElement):
         elif entity is self.underlay:
             self.underlay = None
 
-        # Notify via EventBus — decoupled from objectives, UI, audio, etc.
         if self._event_bus is not None:
-            self._event_bus.emit(EntityClearedEvent(entity))
+            self._event_bus.emit(
+                EntityClearedEvent(entity=entity, position=pos, layer=layer_name)
+            )

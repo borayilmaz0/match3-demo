@@ -1,45 +1,112 @@
 """
-Central registry of all game event data-classes.
-
-Keeping every event in one file makes it easy to:
-  - see all events the game can produce at a glance
-  - avoid circular imports (events have no game-logic dependencies)
-  - map to C# event/delegate signatures during Unity migration
-
-Adding a new event = add a class here, emit it, subscribe wherever needed.
+Central registry of simulation events.
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
 class EntityClearedEvent:
-    """
-    Emitted by Cell when an entity (overlay / occupant / underlay)
-    is fully destroyed and removed from its slot.
-
-    `entity` is the actual CellEntity instance that was removed —
-    subscribers can isinstance-check it to react to specific types.
-    """
-    entity: object  # CellEntity — avoid circular import with a loose type here
+    entity: object
+    position: tuple[int, int] | None = None
+    layer: str | None = None
 
 
-# ── Future events (not yet wired, shown as examples) ──────────────────
+@dataclass(frozen=True)
+class DamageRequestedEvent:
+    position: tuple[int, int]
+    damage_type: Any
+    color: Any = None
+    source: str | None = None
+    chain_id: int | None = None
+
+
+@dataclass(frozen=True)
+class DamageAppliedEvent:
+    position: tuple[int, int]
+    damage_type: Any
+    color: Any = None
+    did_change: bool = False
+    destroyed_layers: tuple[str, ...] = ()
+
 
 @dataclass(frozen=True)
 class MatchResolvedEvent:
-    """Emitted after a match group is processed."""
     cells_removed: frozenset
-    combo_count: int
+    combo_count: int = 0
+    spawn_pos: tuple[int, int] | None = None
+    spawned_type: Any = None
+
+
+@dataclass(frozen=True)
+class SpecialTriggeredEvent:
+    position: tuple[int, int]
+    candy_type: Any
+    trigger: str
+
+
+@dataclass(frozen=True)
+class ColumnStateChangedEvent:
+    column: int
+    old_state: Any
+    new_state: Any
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ColumnCellsReservedEvent:
+    column: int
+    rows: tuple[int, ...]
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ColumnCellsReleasedEvent:
+    column: int
+    rows: tuple[int, ...]
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ColumnFallingStartedEvent:
+    columns: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ColumnFallingStoppedEvent:
+    columns: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class OccupantMovedEvent:
+    from_pos: tuple[int, int]
+    to_pos: tuple[int, int]
+    entity: object
+
+
+@dataclass(frozen=True)
+class SpawnedEvent:
+    position: tuple[int, int]
+    entity: object
+
+
+@dataclass(frozen=True)
+class BoardPhaseChangedEvent:
+    old_phase: str
+    new_phase: str
+
+
+@dataclass(frozen=True)
+class BoardBecameStableEvent:
+    pass
 
 
 @dataclass(frozen=True)
 class CascadeCompleteEvent:
-    """Emitted when the board reaches a stable state after cascading."""
     pass
 
 
 @dataclass(frozen=True)
 class MoveConsumedEvent:
-    """Emitted when the player successfully spends a move."""
     moves_remaining: int
