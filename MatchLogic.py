@@ -124,4 +124,3 @@ class MatchLogic:
         v_len = up + down + 1
 
         return h_len, v_len
-    

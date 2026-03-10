@@ -1,4 +1,3 @@
-
 from BasicDamageable import BasicDamageable
 from CellUnderlay import CellUnderlay
 from DamageType import DamageType
