@@ -67,15 +67,12 @@ class Cell(BoardElement):
 
     # ---------- damage routing ----------
 
-    def apply_damage(self, ctx: DamageContext, pos=None, on_special_hit=None):
+    def apply_damage(self, ctx: DamageContext, pos=None):
         """
         Damage priority:
         overlay -> occupant -> underlay
-
-        `on_special_hit(pos, entity, ctx) -> bool` is an optional hook owned by the
-        game-resolution layer. If it returns True, the hit was converted into a
-        special activation and normal occupant damage is skipped.
         """
+        damage_given = False
         for entity in (self.overlay, self.occupant, self.underlay):
             if not entity:
                 continue
@@ -84,23 +81,19 @@ class Cell(BoardElement):
             if not dmg or not dmg.can_take_damage(ctx):
                 continue
 
-            if (
-                    entity is self.occupant
-                    and on_special_hit is not None
-                    and pos is not None
-                    and on_special_hit(pos, entity, ctx)
-            ):
-                return
-
             dmg.take_damage(ctx)
+            damage_given = True
+            reflector = entity.get(DamageReflecting)
 
             if dmg.is_destroyed():
                 self._remove_entity(entity)
 
-            reflector = entity.get(DamageReflecting)
+
             if not reflector or not reflector.can_reflect_damage():
                 break
 
+        if damage_given:
+            ...
 
     # ---------- helpers ----------
 

@@ -4,9 +4,8 @@ from MatchResult import MatchResult
 
 
 class DamageResolutionLogic:
-    def __init__(self, board, on_special_hit=None):
+    def __init__(self, board):
         self.board = board
-        self.on_special_hit = on_special_hit
 
     def apply_damage_at(self, pos, ctx: DamageContext):
         r, c = pos
@@ -17,12 +16,15 @@ class DamageResolutionLogic:
         cell.apply_damage(
             ctx,
             pos=pos,
-            on_special_hit=self.on_special_hit,
         )
         return True
 
     def apply_match_result(self, match_result: MatchResult):
-        for r, c in match_result.cells_to_remove:
+        match_cells = set(match_result.cells_to_remove)
+        neighbor_cells = set()
+
+        for r, c in match_cells:
+            # Apply primary MATCH damage
             self.apply_damage_at(
                 (r, c),
                 DamageContext(
@@ -31,15 +33,21 @@ class DamageResolutionLogic:
                 ),
             )
 
-        for r, c in match_result.cells_to_remove:
-            for nr, nc in self._neighbors(r, c):
-                self.apply_damage_at(
-                    (nr, nc),
-                    DamageContext(
-                        DamageType.MATCH_NEAR,
-                        color=match_result.pivot_candy.color,
-                    ),
-                )
+            # Blindly add all valid neighbors to the set
+            neighbor_cells.update(self._neighbors(r, c))
+
+        # Remove the original match cells from the neighbors set in one shot
+        neighbor_cells -= match_cells
+
+        # Apply MATCH_NEAR damage to the remaining true neighbors
+        for nr, nc in neighbor_cells:
+            self.apply_damage_at(
+                (nr, nc),
+                DamageContext(
+                    DamageType.MATCH_NEAR,
+                    color=match_result.pivot_candy.color,
+                ),
+            )
 
     def _neighbors(self, r, c):
         for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):

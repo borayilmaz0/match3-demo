@@ -41,6 +41,10 @@ class Level1(Level):
 
         self.objectives = []
 
+    """
+    TODO lightball normal doesnt work as expected
+    """
+
     def set_objectives(self):
         self.layout[0][0] = Cell(
             occupant=RocketVCandy(ColorType.YELLOW),
@@ -48,9 +52,9 @@ class Level1(Level):
             underlay=Snow(),
         )
 
-        self.layout[1][1] = Cell(occupant=RocketVCandy(ColorType.YELLOW),
+        self.layout[1][1] = Cell(occupant=LightBallCandy(ColorType.YELLOW),
                                  underlay=Snow())
-        self.layout[1][2] = Cell(occupant=BombCandy(ColorType.YELLOW),
+        self.layout[1][2] = Cell(occupant=LightBallCandy(ColorType.YELLOW),
                                  underlay=Snow())
 
         self.objectives = [

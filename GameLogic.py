@@ -13,6 +13,7 @@ from Cascading import Cascading
 
 
 class ColumnStateController:
+
     def __init__(self, board):
         self.board = board
 
@@ -36,7 +37,8 @@ class ColumnStateController:
     def settle_locked_columns(self):
         settled = set()
         for c in range(self.board.cols):
-            if self.board.column_states.is_locked(c) and not self._column_needs_fall(c):
+            if self.board.column_states.is_locked(
+                    c) and not self._column_needs_fall(c):
                 settled.add(c)
 
         self.board.column_states.set_steady_many(settled)
@@ -69,14 +71,14 @@ class ColumnStateController:
 
 
 class BoardResolver:
+
     def __init__(self, board):
         self.board = board
         self.md_logic = MatchDetectionLogic(board)
         self.match_logic = MatchLogic(board)
         self.cascade_logic = CascadeLogic(board)
         self.column_states = ColumnStateController(board)
-        self.special_logic = None
-        self.damage_logic = DamageResolutionLogic(board, self._on_special_hit)
+        self.damage_logic = DamageResolutionLogic(board)
         self.spawn_logic = SpawnLogic(board)
         self.special_logic = SpecialActivationLogic(board, self.damage_logic)
 
@@ -96,12 +98,15 @@ class BoardResolver:
         combo_handled = False
         if self.special_logic.can_activate_combo_on_swap(candy_a, candy_b):
             combo_handled = self.special_logic.activate_combo_on_swap(
-                (r1, c1), (r2, c2), candy_a, candy_b
-            )
+                (r1, c1), (r2, c2), candy_a, candy_b)
             print("after combo:\n", self.board)
             if combo_handled:
                 pending_special_activations.append(True)
 
+        if combo_handled:
+            impacted = self.special_logic.consume_impacted_columns()
+            self.column_states.lock_positions([(0, c) for c in impacted])
+            pending_special_activations.append(True)
         if not combo_handled:
             self._swap(r1, c1, r2, c2)
             print("after swap:\n", self.board)
@@ -121,8 +126,10 @@ class BoardResolver:
                     pending_match_results.append(result)
 
             if isinstance(candy, Candy) and candy.is_special():
-                neighbor = self.board.get_occupant(r2, c2) if pos == (r1, c1) else self.board.get_occupant(r1, c1)
-                activated = self.special_logic.activate_on_swap(pos, candy, neighbor)
+                neighbor = self.board.get_occupant(r2, c2) if pos == (
+                    r1, c1) else self.board.get_occupant(r1, c1)
+                activated = self.special_logic.activate_on_swap(
+                    pos, candy, neighbor)
                 if activated:
                     pending_special_activations.append(True)
 
@@ -138,7 +145,9 @@ class BoardResolver:
         for result in pending_match_results:
             self.damage_logic.apply_match_result(result)
             if result.spawn_candy:
-                self.board.get_board_element(*result.spawn_pos).occupant = self.spawn_logic.spawn_custom_candy(
+                self.board.get_board_element(
+                    *result.spawn_pos
+                ).occupant = self.spawn_logic.spawn_custom_candy(
                     result.spawn_candy.color,
                     result.spawn_candy.type,
                 )
@@ -160,7 +169,7 @@ class BoardResolver:
         if not activated:
             self.column_states.unlock_all()
             return False
-        print("after swap:\n",self.board)
+        print("after swap:\n", self.board)
         self.resolve_until_stable()
         return True
 
@@ -172,9 +181,9 @@ class BoardResolver:
             spawned = False
 
             if falling:
-                moved = bool(self.cascade_logic.apply())
-                active = {c for c in range(self.board.cols) if self.board.column_states.is_falling(c)}
-                self.column_states.transition_falling_to_locked(active)
+                moved_columns = self.cascade_logic.apply(falling)
+                moved = bool(moved_columns)
+                self.column_states.transition_falling_to_locked(falling)
 
             # Important:
             # even if no column is "falling", a locked column may still contain
@@ -188,14 +197,16 @@ class BoardResolver:
             all_matches = self.md_logic.collect_all_matches()
             if all_matches:
                 policy = CascadePivotPolicy()
-                match_results = self.match_logic.resolve_matches(all_matches, policy)
+                match_results = self.match_logic.resolve_matches(
+                    all_matches, policy)
 
                 for result in match_results:
                     self.column_states.lock_positions(result.cells_to_remove)
                     self.damage_logic.apply_match_result(result)
 
                     if result.spawn_candy:
-                        self.board.get_board_element(*result.spawn_pos).occupant = result.spawn_candy
+                        self.board.get_board_element(
+                            *result.spawn_pos).occupant = result.spawn_candy
                         self.column_states.lock_positions([result.spawn_pos])
                     print("after resolve iteration:\n", self.board)
                 continue
@@ -203,7 +214,8 @@ class BoardResolver:
             self.column_states.settle_locked_columns()
 
             print("after resolve iteration:\n", self.board)
-            if not self.board.column_states.any_locked() and not self.board.column_states.any_falling():
+            if not self.board.column_states.any_locked(
+            ) and not self.board.column_states.any_falling():
                 break
 
     def _swap(self, r1, c1, r2, c2) -> bool:
@@ -215,16 +227,9 @@ class BoardResolver:
         cell1.occupant, cell2.occupant = cell2.occupant, cell1.occupant
         return True
 
-    def _on_special_hit(self, pos, entity, ctx):
-        if not isinstance(entity, Candy):
-            return False
-        if not entity.is_special():
-            return False
-        self.column_states.lock_positions([pos])
-        return entity.on_hit(self.special_logic, pos, ctx)
-
 
 class GameLogic:
+
     def __init__(self, board):
         self.board = board
         self.board_resolver = BoardResolver(board)

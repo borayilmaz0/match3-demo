@@ -4,7 +4,7 @@ from typing import Callable, Type
 
 class EventBus:
     """
-    Lightweight publish/subscribe event bus.
+    Lightweight publish/subscribe event bus. asdasd
 
     Usage
     -----

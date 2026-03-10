@@ -152,94 +152,6 @@ class ObjectiveManager:
 
 
 ================================================================================
-FILE: Board.py
-================================================================================
-
-from Cell import Cell
-from ColumnStateManager import ColumnStateManager
-
-
-class Board:
-    def __init__(self, rows, cols, color_set, board_layout=None):
-        self.rows = rows
-        self.cols = cols
-        self.color_set = list(color_set)
-        self.column_states = ColumnStateManager(self.cols)
-
-        # Board structure (Cell / GapCell)
-        if board_layout is None:
-            self.board = [[Cell() for _ in range(cols)] for _ in range(rows)]
-        else:
-            self.board = board_layout
-
-    # --------------------------------------------------
-    # Debug / display
-    # --------------------------------------------------
-    def __str__(self):
-        s = ""
-        for r in range(self.rows):
-            row = []
-            for c in range(self.cols):
-                row.append(str(self.get_board_element(r, c)))
-            s += f"{row}\n"
-        return s
-
-    # --------------------------------------------------
-    # Cell access
-    # --------------------------------------------------
-    def get_board_element(self, r, c):
-        if 0 <= r < self.rows and 0 <= c < self.cols:
-            return self.board[r][c]
-        raise IndexError("Board access out of bounds")
-
-    def set_cell(self, r, c, cell):
-        if 0 <= r < self.rows and 0 <= c < self.cols:
-            self.board[r][c] = cell
-            return True
-        raise IndexError("Board access out of bounds")
-
-    # --------------------------------------------------
-    # Occupant access
-    # --------------------------------------------------
-    def get_occupant(self, r, c):
-        cell = self.get_board_element(r, c)
-        if not cell.can_hold_occupant() or not cell.can_use_cell_occupant():
-            return None
-        return cell.occupant
-
-    # --------------------------------------------------
-    # Validation
-    # --------------------------------------------------
-    def can_cell_hold_occupant(self, r, c):
-        try:
-            cell = self.get_board_element(r, c)
-        except IndexError:
-            return False
-        return cell.can_hold_occupant()
-
-    # --------------------------------------------------
-    # Swap validation
-    # --------------------------------------------------
-    def can_swap(self, r1, c1, r2, c2) -> bool:
-        try:
-            if abs(r1 - r2) + abs(c1 - c2) != 1:
-                return False
-
-            if not self.column_states.can_interact(c1) or not self.column_states.can_interact(c2):
-                return False
-
-            cell1 = self.get_board_element(r1, c1)
-            cell2 = self.get_board_element(r2, c2)
-
-            if not cell1.can_swap() or not cell2.can_swap():
-                return False
-
-            return True
-        except IndexError:
-            return False
-
-
-================================================================================
 FILE: ClearEntityObjective.py
 ================================================================================
 
@@ -1844,54 +1756,6 @@ class LockedSwappable(Swappable):
 
 
 ================================================================================
-FILE: EventBus.py
-================================================================================
-
-from collections import defaultdict
-from typing import Callable, Type
-
-
-class EventBus:
-    """
-    Lightweight publish/subscribe event bus.
-
-    Usage
-    -----
-    bus = EventBus()
-
-    # subscribe
-    bus.subscribe(EntityClearedEvent, my_handler)   # handler(event) -> None
-
-    # emit
-    bus.emit(EntityClearedEvent(entity))
-
-    # unsubscribe (useful for level teardown)
-    bus.unsubscribe(EntityClearedEvent, my_handler)
-    """
-
-    def __init__(self):
-        # event_type -> list of callables
-        self._handlers: dict[Type, list[Callable]] = defaultdict(list)
-
-    def subscribe(self, event_type: Type, handler: Callable) -> None:
-        if handler not in self._handlers[event_type]:
-            self._handlers[event_type].append(handler)
-
-    def unsubscribe(self, event_type: Type, handler: Callable) -> None:
-        handlers = self._handlers.get(event_type, [])
-        if handler in handlers:
-            handlers.remove(handler)
-
-    def emit(self, event) -> None:
-        for handler in list(self._handlers.get(type(event), [])):
-            handler(event)
-
-    def clear(self) -> None:
-        """Remove all subscriptions (call on level teardown)."""
-        self._handlers.clear()
-
-
-================================================================================
 FILE: BasicMatchable.py
 ================================================================================
 
@@ -2173,249 +2037,6 @@ class CellEntity:
 
 
 ================================================================================
-FILE: GameLogic.py
-================================================================================
-
-from Candy import Candy
-from CandyType import CandyType
-from CascadeLogic import CascadeLogic
-from CascadePivotPolicy import CascadePivotPolicy
-from DamageResolutionLogic import DamageResolutionLogic
-from DeadlockDetectionLogic import DeadlockDetectionLogic
-from MatchDetectionLogic import MatchDetectionLogic
-from MatchLogic import MatchLogic
-from SpawnLogic import SpawnLogic
-from SpecialActivationLogic import SpecialActivationLogic
-from SwapPivotPolicy import SwapPivotPolicy
-from Cascading import Cascading
-
-
-class ColumnStateController:
-    def __init__(self, board):
-        self.board = board
-
-    def lock_positions(self, positions):
-        self.board.column_states.lock_many(c for _, c in positions)
-
-    def transition_locked_to_falling(self):
-        falling = set()
-        for c in range(self.board.cols):
-            if not self.board.column_states.is_locked(c):
-                continue
-            if self._column_needs_fall(c):
-                falling.add(c)
-
-        self.board.column_states.start_falling_many(falling)
-        return falling
-
-    def transition_falling_to_locked(self, columns):
-        self.board.column_states.lock_many(columns)
-
-    def settle_locked_columns(self):
-        settled = set()
-        for c in range(self.board.cols):
-            if self.board.column_states.is_locked(c) and not self._column_needs_fall(c):
-                settled.add(c)
-
-        self.board.column_states.set_steady_many(settled)
-        return settled
-
-    def unlock_all(self):
-        self.board.column_states.set_steady_many(range(self.board.cols))
-
-    def unlock_many(self, cols):
-        self.board.column_states.set_steady_many(cols)
-
-    def _column_needs_fall(self, c):
-        seen_empty = False
-        for r in range(self.board.rows - 1, -1, -1):
-            if not self.board.can_cell_hold_occupant(r, c):
-                continue
-
-            cell = self.board.get_board_element(r, c)
-            occ = cell.occupant
-
-            if occ is None:
-                seen_empty = True
-                continue
-
-            cascading = occ.get(Cascading)
-            if seen_empty and cascading and cascading.can_fall():
-                return True
-
-        return False
-
-
-class BoardResolver:
-    def __init__(self, board):
-        self.board = board
-        self.md_logic = MatchDetectionLogic(board)
-        self.match_logic = MatchLogic(board)
-        self.cascade_logic = CascadeLogic(board)
-        self.column_states = ColumnStateController(board)
-        self.special_logic = None
-        self.damage_logic = DamageResolutionLogic(board, self._on_special_hit)
-        self.spawn_logic = SpawnLogic(board)
-        self.special_logic = SpecialActivationLogic(board, self.damage_logic)
-
-    def try_swap(self, r1, c1, r2, c2):
-        if not self.board.can_swap(r1, c1, r2, c2):
-            return False
-
-        pivots = [(r1, c1), (r2, c2)]
-        swap_policy = SwapPivotPolicy(pivots)
-
-        pending_match_results = []
-        pending_special_activations = []
-
-        candy_a = self.board.get_occupant(r1, c1)
-        candy_b = self.board.get_occupant(r2, c2)
-
-        combo_handled = False
-        if self.special_logic.can_activate_combo_on_swap(candy_a, candy_b):
-            combo_handled = self.special_logic.activate_combo_on_swap(
-                (r1, c1), (r2, c2), candy_a, candy_b
-            )
-            print("after combo:\n", self.board)
-            if combo_handled:
-                pending_special_activations.append(True)
-
-        if not combo_handled:
-            self._swap(r1, c1, r2, c2)
-            print("after swap:\n", self.board)
-
-        for pos in pivots:
-            if combo_handled:
-                continue
-
-            r, c = pos
-            candy = self.board.get_occupant(r, c)
-
-            match = self.md_logic.collect_matches_at(r, c)
-            if match:
-                pivot = swap_policy.choose_pivot(match)
-                result = self.match_logic.find_best_match(match, pivot)
-                if result:
-                    pending_match_results.append(result)
-
-            if isinstance(candy, Candy) and candy.is_special():
-                neighbor = self.board.get_occupant(r2, c2) if pos == (r1, c1) else self.board.get_occupant(r1, c1)
-                activated = self.special_logic.activate_on_swap(pos, candy, neighbor)
-                if activated:
-                    pending_special_activations.append(True)
-
-        if not pending_match_results and not pending_special_activations:
-            self._swap(r1, c1, r2, c2)
-            print("after swap back:\n", self.board)
-            self.column_states.unlock_many([c1, c2])
-            return False
-
-        # now swap is actually valid, so we can lock
-        self.column_states.lock_positions(pivots)
-
-        for result in pending_match_results:
-            self.damage_logic.apply_match_result(result)
-            if result.spawn_candy:
-                self.board.get_board_element(*result.spawn_pos).occupant = self.spawn_logic.spawn_custom_candy(
-                    result.spawn_candy.color,
-                    result.spawn_candy.type,
-                )
-                self.column_states.lock_positions([result.spawn_pos])
-        print("after swap and pop:\n", self.board)
-        self.resolve_until_stable()
-        return True
-
-    def try_tap(self, r, c):
-        if not self.board.column_states.can_interact(c):
-            return False
-
-        candy = self.board.get_occupant(r, c)
-        if not isinstance(candy, Candy) or candy.is_normal():
-            return False
-
-        self.column_states.lock_positions([(r, c)])
-        activated = self.special_logic.activate_on_hit((r, c), candy)
-        if not activated:
-            self.column_states.unlock_all()
-            return False
-        print("after swap:\n",self.board)
-        self.resolve_until_stable()
-        return True
-
-    def resolve_until_stable(self):
-        while True:
-            falling = self.column_states.transition_locked_to_falling()
-
-            moved = False
-            spawned = False
-
-            if falling:
-                moved = bool(self.cascade_logic.apply())
-                active = {c for c in range(self.board.cols) if self.board.column_states.is_falling(c)}
-                self.column_states.transition_falling_to_locked(active)
-
-            # Important:
-            # even if no column is "falling", a locked column may still contain
-            # empty spawnable cells (e.g. fully cleared top cells / fully empty column).
-            if self.board.column_states.any_locked():
-                spawned = self.spawn_logic.apply()
-
-            if moved or spawned:
-                continue
-
-            all_matches = self.md_logic.collect_all_matches()
-            if all_matches:
-                policy = CascadePivotPolicy()
-                match_results = self.match_logic.resolve_matches(all_matches, policy)
-
-                for result in match_results:
-                    self.column_states.lock_positions(result.cells_to_remove)
-                    self.damage_logic.apply_match_result(result)
-
-                    if result.spawn_candy:
-                        self.board.get_board_element(*result.spawn_pos).occupant = result.spawn_candy
-                        self.column_states.lock_positions([result.spawn_pos])
-                    print("after resolve iteration:\n", self.board)
-                continue
-
-            self.column_states.settle_locked_columns()
-
-            print("after resolve iteration:\n", self.board)
-            if not self.board.column_states.any_locked() and not self.board.column_states.any_falling():
-                break
-
-    def _swap(self, r1, c1, r2, c2) -> bool:
-        if not self.board.can_swap(r1, c1, r2, c2):
-            return False
-
-        cell1 = self.board.get_board_element(r1, c1)
-        cell2 = self.board.get_board_element(r2, c2)
-        cell1.occupant, cell2.occupant = cell2.occupant, cell1.occupant
-        return True
-
-    def _on_special_hit(self, pos, entity, ctx):
-        if not isinstance(entity, Candy):
-            return False
-        if not entity.is_special():
-            return False
-        self.column_states.lock_positions([pos])
-        return entity.on_hit(self.special_logic, pos, ctx)
-
-
-class GameLogic:
-    def __init__(self, board):
-        self.board = board
-        self.board_resolver = BoardResolver(board)
-        self.deadlock_logic = DeadlockDetectionLogic(board)
-
-    def try_swap(self, r1, c1, r2, c2):
-        return self.board_resolver.try_swap(r1, c1, r2, c2)
-
-    def tap(self, r, c):
-        return self.board_resolver.try_tap(r, c)
-
-
-================================================================================
 FILE: Swappable.py
 ================================================================================
 
@@ -2478,6 +2099,424 @@ class DamageContext:
 
 
 ================================================================================
+FILE: GameLogic.py
+================================================================================
+
+from Candy import Candy
+from CandyType import CandyType
+from CascadeLogic import CascadeLogic
+from CascadePivotPolicy import CascadePivotPolicy
+from DamageResolutionLogic import DamageResolutionLogic
+from DeadlockDetectionLogic import DeadlockDetectionLogic
+from MatchDetectionLogic import MatchDetectionLogic
+from MatchLogic import MatchLogic
+from SpawnLogic import SpawnLogic
+from SpecialActivationLogic import SpecialActivationLogic
+from SwapPivotPolicy import SwapPivotPolicy
+from Cascading import Cascading
+
+
+class ColumnStateController:
+
+    def __init__(self, board):
+        self.board = board
+
+    def lock_positions(self, positions):
+        self.board.column_states.lock_many(c for _, c in positions)
+
+    def transition_locked_to_falling(self):
+        falling = set()
+        for c in range(self.board.cols):
+            if not self.board.column_states.is_locked(c):
+                continue
+            if self._column_needs_fall(c):
+                falling.add(c)
+
+        self.board.column_states.start_falling_many(falling)
+        return falling
+
+    def transition_falling_to_locked(self, columns):
+        self.board.column_states.lock_many(columns)
+
+    def settle_locked_columns(self):
+        settled = set()
+        for c in range(self.board.cols):
+            if self.board.column_states.is_locked(
+                    c) and not self._column_needs_fall(c):
+                settled.add(c)
+
+        self.board.column_states.set_steady_many(settled)
+        return settled
+
+    def unlock_all(self):
+        self.board.column_states.set_steady_many(range(self.board.cols))
+
+    def unlock_many(self, cols):
+        self.board.column_states.set_steady_many(cols)
+
+    def _column_needs_fall(self, c):
+        seen_empty = False
+        for r in range(self.board.rows - 1, -1, -1):
+            if not self.board.can_cell_hold_occupant(r, c):
+                continue
+
+            cell = self.board.get_board_element(r, c)
+            occ = cell.occupant
+
+            if occ is None:
+                seen_empty = True
+                continue
+
+            cascading = occ.get(Cascading)
+            if seen_empty and cascading and cascading.can_fall():
+                return True
+
+        return False
+
+
+class BoardResolver:
+
+    def __init__(self, board):
+        self.board = board
+        self.md_logic = MatchDetectionLogic(board)
+        self.match_logic = MatchLogic(board)
+        self.cascade_logic = CascadeLogic(board)
+        self.column_states = ColumnStateController(board)
+        self.damage_logic = DamageResolutionLogic(board, self._on_special_hit)
+        self.spawn_logic = SpawnLogic(board)
+        self.special_logic = SpecialActivationLogic(board, self.damage_logic)
+
+    def try_swap(self, r1, c1, r2, c2):
+        if not self.board.can_swap(r1, c1, r2, c2):
+            return False
+
+        pivots = [(r1, c1), (r2, c2)]
+        swap_policy = SwapPivotPolicy(pivots)
+
+        pending_match_results = []
+        pending_special_activations = []
+
+        candy_a = self.board.get_occupant(r1, c1)
+        candy_b = self.board.get_occupant(r2, c2)
+
+        combo_handled = False
+        if self.special_logic.can_activate_combo_on_swap(candy_a, candy_b):
+            combo_handled = self.special_logic.activate_combo_on_swap(
+                (r1, c1), (r2, c2), candy_a, candy_b)
+            print("after combo:\n", self.board)
+            if combo_handled:
+                pending_special_activations.append(True)
+
+        if combo_handled:
+            impacted = self.special_logic.consume_impacted_columns()
+            self.column_states.lock_positions([(0, c) for c in impacted])
+            pending_special_activations.append(True)
+        if not combo_handled:
+            self._swap(r1, c1, r2, c2)
+            print("after swap:\n", self.board)
+
+        for pos in pivots:
+            if combo_handled:
+                continue
+
+            r, c = pos
+            candy = self.board.get_occupant(r, c)
+
+            match = self.md_logic.collect_matches_at(r, c)
+            if match:
+                pivot = swap_policy.choose_pivot(match)
+                result = self.match_logic.find_best_match(match, pivot)
+                if result:
+                    pending_match_results.append(result)
+
+            if isinstance(candy, Candy) and candy.is_special():
+                neighbor = self.board.get_occupant(r2, c2) if pos == (
+                    r1, c1) else self.board.get_occupant(r1, c1)
+                activated = self.special_logic.activate_on_swap(
+                    pos, candy, neighbor)
+                if activated:
+                    pending_special_activations.append(True)
+
+        if not pending_match_results and not pending_special_activations:
+            self._swap(r1, c1, r2, c2)
+            print("after swap back:\n", self.board)
+            self.column_states.unlock_many([c1, c2])
+            return False
+
+        # now swap is actually valid, so we can lock
+        self.column_states.lock_positions(pivots)
+
+        for result in pending_match_results:
+            self.damage_logic.apply_match_result(result)
+            if result.spawn_candy:
+                self.board.get_board_element(
+                    *result.spawn_pos
+                ).occupant = self.spawn_logic.spawn_custom_candy(
+                    result.spawn_candy.color,
+                    result.spawn_candy.type,
+                )
+                self.column_states.lock_positions([result.spawn_pos])
+        print("after swap and pop:\n", self.board)
+        self.resolve_until_stable()
+        return True
+
+    def try_tap(self, r, c):
+        if not self.board.column_states.can_interact(c):
+            return False
+
+        candy = self.board.get_occupant(r, c)
+        if not isinstance(candy, Candy) or candy.is_normal():
+            return False
+
+        self.column_states.lock_positions([(r, c)])
+        activated = self.special_logic.activate_on_hit((r, c), candy)
+        if not activated:
+            self.column_states.unlock_all()
+            return False
+        print("after swap:\n", self.board)
+        self.resolve_until_stable()
+        return True
+
+    def resolve_until_stable(self):
+        while True:
+            falling = self.column_states.transition_locked_to_falling()
+
+            moved = False
+            spawned = False
+
+            if falling:
+                moved_columns = self.cascade_logic.apply(falling)
+                moved = bool(moved_columns)
+                self.column_states.transition_falling_to_locked(falling)
+
+            # Important:
+            # even if no column is "falling", a locked column may still contain
+            # empty spawnable cells (e.g. fully cleared top cells / fully empty column).
+            if self.board.column_states.any_locked():
+                spawned = self.spawn_logic.apply()
+
+            if moved or spawned:
+                continue
+
+            all_matches = self.md_logic.collect_all_matches()
+            if all_matches:
+                policy = CascadePivotPolicy()
+                match_results = self.match_logic.resolve_matches(
+                    all_matches, policy)
+
+                for result in match_results:
+                    self.column_states.lock_positions(result.cells_to_remove)
+                    self.damage_logic.apply_match_result(result)
+
+                    if result.spawn_candy:
+                        self.board.get_board_element(
+                            *result.spawn_pos).occupant = result.spawn_candy
+                        self.column_states.lock_positions([result.spawn_pos])
+                    print("after resolve iteration:\n", self.board)
+                continue
+
+            self.column_states.settle_locked_columns()
+
+            print("after resolve iteration:\n", self.board)
+            if not self.board.column_states.any_locked(
+            ) and not self.board.column_states.any_falling():
+                break
+
+    def _swap(self, r1, c1, r2, c2) -> bool:
+        if not self.board.can_swap(r1, c1, r2, c2):
+            return False
+
+        cell1 = self.board.get_board_element(r1, c1)
+        cell2 = self.board.get_board_element(r2, c2)
+        cell1.occupant, cell2.occupant = cell2.occupant, cell1.occupant
+        return True
+
+    def _on_special_hit(self, pos, entity, ctx):
+        if not isinstance(entity, Candy):
+            return False
+        if not entity.is_special():
+            return False
+        self.column_states.lock_positions([pos])
+        return entity.on_hit(self.special_logic, pos, ctx)
+
+
+class GameLogic:
+
+    def __init__(self, board):
+        self.board = board
+        self.board_resolver = BoardResolver(board)
+        self.deadlock_logic = DeadlockDetectionLogic(board)
+
+    def try_swap(self, r1, c1, r2, c2):
+        return self.board_resolver.try_swap(r1, c1, r2, c2)
+
+    def tap(self, r, c):
+        return self.board_resolver.try_tap(r, c)
+
+
+================================================================================
+FILE: Board.py
+================================================================================
+
+from Cell import Cell
+from ColumnStateManager import ColumnStateManager
+
+
+class Board:
+
+    def __init__(self, rows, cols, color_set, board_layout=None):
+        self.rows = rows
+        self.cols = cols
+        self.color_set = list(color_set)
+        self.column_states = ColumnStateManager(self.cols)
+
+        # Board structure (Cell / GapCell)
+        if board_layout is None:
+            self.board = [[Cell() for _ in range(cols)] for _ in range(rows)]
+        else:
+            self.board = board_layout
+
+    # --------------------------------------------------
+    # Debug / display
+    # --------------------------------------------------
+    def __str__(self):
+        s = ""
+        for c in range(self.cols):
+            s += f"{self.column_states.states[c].name:>31}"
+        s += "\n"
+        for r in range(self.rows):
+            row = []
+            for c in range(self.cols):
+                row.append(str(self.get_board_element(r, c)))
+            s += f"{row}\n"
+        return s
+
+    # --------------------------------------------------
+    # Cell access
+    # --------------------------------------------------
+    def get_board_element(self, r, c):
+        if 0 <= r < self.rows and 0 <= c < self.cols:
+            return self.board[r][c]
+        raise IndexError("Board access out of bounds")
+
+    def set_cell(self, r, c, cell):
+        if 0 <= r < self.rows and 0 <= c < self.cols:
+            self.board[r][c] = cell
+            return True
+        raise IndexError("Board access out of bounds")
+
+    # --------------------------------------------------
+    # Occupant access
+    # --------------------------------------------------
+    def get_occupant(self, r, c):
+        cell = self.get_board_element(r, c)
+        if not cell.can_hold_occupant() or not cell.can_use_cell_occupant():
+            return None
+        return cell.occupant
+
+    # --------------------------------------------------
+    # Validation
+    # --------------------------------------------------
+    def can_cell_hold_occupant(self, r, c):
+        try:
+            cell = self.get_board_element(r, c)
+        except IndexError:
+            return False
+        return cell.can_hold_occupant()
+
+    # --------------------------------------------------
+    # Swap validation
+    # --------------------------------------------------
+    def can_swap(self, r1, c1, r2, c2) -> bool:
+        try:
+            if abs(r1 - r2) + abs(c1 - c2) != 1:
+                return False
+
+            if not self.column_states.can_interact(
+                    c1) or not self.column_states.can_interact(c2):
+                return False
+
+            cell1 = self.get_board_element(r1, c1)
+            cell2 = self.get_board_element(r2, c2)
+
+            if not cell1.can_swap() or not cell2.can_swap():
+                return False
+
+            return True
+        except IndexError:
+            return False
+
+
+================================================================================
+FILE: Level1.py
+================================================================================
+
+from Cell import Cell
+from GapCell import GapCell
+from Level import Level
+from ColorType import ColorType
+from ClearEntityObjective import ClearEntityObjective
+from Candy import *
+from Snow import Snow
+from Vines import Vines
+
+
+class Level1(Level):
+
+    def __init__(self):
+        super().__init__()
+        self.color_set = [
+            ColorType.RED, ColorType.BLUE, ColorType.GREEN, ColorType.YELLOW
+        ]
+        self.moves = 20
+        """self.layout = [
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), GapCell(), GapCell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
+        ]"""
+        self.layout = [[Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()],
+                       [Cell(), Cell(), Cell(),
+                        Cell(), Cell()]]
+        self.rows = len(self.layout)
+        self.cols = len(self.layout[0])
+
+        self.objectives = []
+
+    """
+    TODO lightball normal doesnt work as expected
+    """
+
+    def set_objectives(self):
+        self.layout[0][0] = Cell(
+            occupant=RocketVCandy(ColorType.YELLOW),
+            overlay=Vines(),
+            underlay=Snow(),
+        )
+
+        self.layout[1][1] = Cell(occupant=LightBallCandy(ColorType.YELLOW),
+                                 underlay=Snow())
+        self.layout[1][2] = Cell(occupant=RocketHCandy(ColorType.YELLOW),
+                                 underlay=Snow())
+
+        self.objectives = [
+            ClearEntityObjective(Vines),
+            ClearEntityObjective(Snow)
+        ]
+
+
+================================================================================
 FILE: SpecialActivationLogic.py
 ================================================================================
 
@@ -2486,15 +2525,6 @@ from DamageContext import DamageContext
 from DamageType import DamageType
 from CandyType import CandyType
 from Candy import Candy, CandyFactory
-"""
-
-TODO self._consume_source_if_present(pos_a, candy_a)
-this stuff is not done properly.
-
-ADD COMBO CANDIES AS WELL SOR SPECIAL-SPECIAL COMBOS!!!
-IT WILL BE EASIER TO HANDLE BOTH THE COMBO HANDLING AND THE ANIMATIONS FOR LATER
-
-"""
 
 
 class SpecialActivationLogic:
@@ -2689,15 +2719,13 @@ class SpecialActivationLogic:
         handler(pos_a, pos_b, candy_a, candy_b)
         return True
 
-    def _consume_source_if_present(self, pos, candy):
-        if candy is None:
-            return
+    def _consume_occupant_if_present(self, pos):
 
         if not self.board.can_cell_hold_occupant(pos[0], pos[1]):
             return
 
         cell = self.board.get_board_element(*pos)
-        if cell.occupant is candy:
+        if cell.occupant is not None:
             cell.occupant = None
 
     # ============================================================
@@ -2755,8 +2783,8 @@ class SpecialActivationLogic:
         ROCKET + ROCKET → cross rocket
         Centered on pos_b (the 'swapped-into' position)
         """
-        self._consume_source_if_present(pos_a, candy_a)
-        self._consume_source_if_present(pos_b, candy_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
         print("before action:\n", self.board)
         self._rocket_h(pos_b)
         self._rocket_v(pos_b)
@@ -2768,8 +2796,8 @@ class SpecialActivationLogic:
         Centered on pos_b
         """
         r, c = pos_b
-        self._consume_source_if_present(pos_a, candy_a)
-        self._consume_source_if_present(pos_b, candy_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
         # radius = 3 → 7x7
         for dr in range(-3, 4):
             for dc in range(-3, 4):
@@ -2784,8 +2812,8 @@ class SpecialActivationLogic:
         _apply_enhanced_damage safely ignores invalid cells.
         """
         center_r, center_c = pos_b
-        self._consume_source_if_present(pos_a, candy_a)
-        self._consume_source_if_present(pos_b, candy_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
         print("before action:\n", self.board)
         # iterate 3x3 area around center
         for dr in (-1, 0, 1):
@@ -2801,8 +2829,8 @@ class SpecialActivationLogic:
         Propeller carries a horizontal rocket.
         """
 
-        self._consume_source_if_present(pos_a, candy_a)
-        self._consume_source_if_present(pos_b, candy_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
 
         self._apply_enhanced_damage(pos_b[0], pos_b[1])
         self._propeller_neighbor_damage(pos_b)
@@ -2819,8 +2847,8 @@ class SpecialActivationLogic:
         """
         Propeller carries a vertical rocket.
         """
-        self._consume_source_if_present(pos_a, candy_a)
-        self._consume_source_if_present(pos_b, candy_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
 
         self._apply_enhanced_damage(pos_b[0], pos_b[1])
         self._propeller_neighbor_damage(pos_b)
@@ -2838,8 +2866,8 @@ class SpecialActivationLogic:
         Propeller carries a bomb.
         """
 
-        self._consume_source_if_present(pos_a, candy_a)
-        self._consume_source_if_present(pos_b, candy_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
 
         self._apply_enhanced_damage(pos_b[0], pos_b[1])
         self._propeller_neighbor_damage(pos_b)
@@ -2861,8 +2889,8 @@ class SpecialActivationLogic:
         - Spawn 3 propeller flights (no neighbor damage)
         """
 
-        self._consume_source_if_present(pos_a, candy_a)
-        self._consume_source_if_present(pos_b, candy_b)
+        self._consume_occupant_if_present(pos_a)
+        self._consume_occupant_if_present(pos_b)
 
         self._apply_enhanced_damage(pos_b[0], pos_b[1])
         self._propeller_neighbor_damage(pos_b)
@@ -2878,7 +2906,7 @@ class SpecialActivationLogic:
         light_pos = pos_a if candy_a.type == CandyType.LIGHT_BALL else pos_b
         other_type = candy_b.type if light_pos == pos_a else candy_a.type
 
-        self._consume_source_if_present(pos_a, candy_a)
+        self._consume_occupant_if_present(pos_a)
         self.board.get_board_element(pos_b[0],
                                      pos_b[1]).occupant = CandyFactory.create(
                                          CandyType.LIGHT_BALL, pos_b)
@@ -2887,14 +2915,20 @@ class SpecialActivationLogic:
 
         rocket_positions = []
         for r, c in self._collect_normal_candies_of_color(target_color):
+            print("next position", r, c)
             new_type = random.choice([CandyType.ROCKET_H, CandyType.ROCKET_V])
             self.board.get_board_element(r, c).occupant = CandyFactory.create(
                 new_type, target_color)
             rocket_positions.append((r, c))
+            print("added", self.board.get_board_element(r, c))
         self.board.get_board_element(
             light_pos[0], light_pos[1]).occupant = CandyFactory.create(
                 other_type, target_color)
+        print("changed lightball",
+              self.board.get_board_element(light_pos[0], light_pos[1]))
         rocket_positions.append(light_pos)
+
+        print("before action:\n", self.board)
 
         # trigger rockets sequentially
         for r, c in rocket_positions:
@@ -2903,10 +2937,10 @@ class SpecialActivationLogic:
                 continue
 
             if occ.type == CandyType.ROCKET_H:
-                self._consume_source_if_present(r, c)
+                self._consume_occupant_if_present((r, c))
                 self._rocket_h((r, c))
             elif occ.type == CandyType.ROCKET_V:
-                self._consume_source_if_present(r, c)
+                self._consume_occupant_if_present((r, c))
                 self._rocket_v((r, c))
 
             # destroy rocket after activation
@@ -2917,7 +2951,7 @@ class SpecialActivationLogic:
         light_pos = pos_a if candy_a.type == CandyType.LIGHT_BALL else pos_b
         other_type = candy_b.type if light_pos == pos_a else candy_a.type
 
-        self._consume_source_if_present(pos_a, candy_a)
+        self._consume_occupant_if_present(pos_a)
         self.board.get_board_element(pos_b[0],
                                      pos_b[1]).occupant = CandyFactory.create(
                                          CandyType.LIGHT_BALL, pos_b)
@@ -2934,6 +2968,8 @@ class SpecialActivationLogic:
                 other_type, target_color)
         bomb_centers.append(light_pos)
 
+        print("before action:\n", self.board)
+
         # collect affected cells (set prevents stacking)
         affected = set()
         for r, c in bomb_centers:
@@ -2943,7 +2979,7 @@ class SpecialActivationLogic:
                         affected.add((r + dr, c + dc))
 
         for r, c in bomb_centers:
-            self._consume_source_if_present(r, c)
+            self._consume_occupant_if_present((r, c))
 
         # apply damage once per cell
         for r, c in affected:
@@ -2953,7 +2989,7 @@ class SpecialActivationLogic:
         light_pos = pos_a if candy_a.type == CandyType.LIGHT_BALL else pos_b
         other_type = candy_b.type if light_pos == pos_a else candy_a.type
 
-        self._consume_source_if_present(pos_a, candy_a)
+        self._consume_occupant_if_present(pos_a)
         self.board.get_board_element(pos_b[0],
                                      pos_b[1]).occupant = CandyFactory.create(
                                          CandyType.LIGHT_BALL, pos_b)
@@ -2970,9 +3006,11 @@ class SpecialActivationLogic:
                 other_type, target_color)
         prop_positions.append(light_pos)
 
+        print("before action:\n", self.board)
+
         # activate propellers one by one
         for r, c in prop_positions:
-            self._consume_source_if_present(r, c)
+            self._consume_occupant_if_present((r, c))
             self._propeller((r, c), pre_damage=False)
 
     def _combo_light_ball_light_ball(self, pos_a, pos_b, candy_a, candy_b):
@@ -3010,8 +3048,15 @@ class SpecialActivationLogic:
         if cell.occupant is None and cell.overlay is None and cell.underlay is None:
             return
 
+        self._impacted_columns.add(c)
+
         self.damage_logic.apply_damage_at((r, c),
                                           DamageContext(DamageType.ENHANCED))
+
+    def consume_impacted_columns(self):
+        cols = set(self._impacted_columns)
+        self._impacted_columns.clear()
+        return cols
 
     def _propeller_neighbor_damage(self, pos):
         r, c = pos
@@ -3032,66 +3077,49 @@ class SpecialActivationLogic:
 
 
 ================================================================================
-FILE: Level1.py
+FILE: EventBus.py
 ================================================================================
 
-from Cell import Cell
-from GapCell import GapCell
-from Level import Level
-from ColorType import ColorType
-from ClearEntityObjective import ClearEntityObjective
-from Candy import *
-from Snow import Snow
-from Vines import Vines
+from collections import defaultdict
+from typing import Callable, Type
 
 
-class Level1(Level):
+class EventBus:
+    """
+    Lightweight publish/subscribe event bus. asdasd
+
+    Usage
+    -----
+    bus = EventBus()
+
+    # subscribe
+    bus.subscribe(EntityClearedEvent, my_handler)   # handler(event) -> None
+
+    # emit
+    bus.emit(EntityClearedEvent(entity))
+
+    # unsubscribe (useful for level teardown)
+    bus.unsubscribe(EntityClearedEvent, my_handler)
+    """
 
     def __init__(self):
-        super().__init__()
-        self.color_set = [
-            ColorType.RED, ColorType.BLUE, ColorType.GREEN, ColorType.YELLOW
-        ]
-        self.moves = 20
-        """self.layout = [
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), GapCell(), GapCell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-            [Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell(), Cell()],
-        ]"""
-        self.layout = [[Cell(), Cell(), Cell(),
-                        Cell(), Cell()],
-                       [Cell(), Cell(), Cell(),
-                        Cell(), Cell()],
-                       [Cell(), Cell(), Cell(),
-                        Cell(), Cell()],
-                       [Cell(), Cell(), Cell(),
-                        Cell(), Cell()],
-                       [Cell(), Cell(), Cell(),
-                        Cell(), Cell()]]
-        self.rows = len(self.layout)
-        self.cols = len(self.layout[0])
+        # event_type -> list of callables
+        self._handlers: dict[Type, list[Callable]] = defaultdict(list)
 
-        self.objectives = []
+    def subscribe(self, event_type: Type, handler: Callable) -> None:
+        if handler not in self._handlers[event_type]:
+            self._handlers[event_type].append(handler)
 
-    def set_objectives(self):
-        self.layout[0][0] = Cell(
-            occupant=RocketVCandy(ColorType.YELLOW),
-            overlay=Vines(),
-            underlay=Snow(),
-        )
+    def unsubscribe(self, event_type: Type, handler: Callable) -> None:
+        handlers = self._handlers.get(event_type, [])
+        if handler in handlers:
+            handlers.remove(handler)
 
-        self.layout[1][1] = Cell(occupant=RocketVCandy(ColorType.YELLOW),
-                                 underlay=Snow())
-        self.layout[1][2] = Cell(occupant=BombCandy(ColorType.YELLOW),
-                                 underlay=Snow())
+    def emit(self, event) -> None:
+        for handler in list(self._handlers.get(type(event), [])):
+            handler(event)
 
-        self.objectives = [
-            ClearEntityObjective(Vines),
-            ClearEntityObjective(Snow)
-        ]
+    def clear(self) -> None:
+        """Remove all subscriptions (call on level teardown)."""
+        self._handlers.clear()
 
