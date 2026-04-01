@@ -1,5 +1,4 @@
 from Cell import Cell
-from ColumnStateManager import ColumnStateManager
 
 
 class Board:
@@ -7,7 +6,6 @@ class Board:
         self.rows = rows
         self.cols = cols
         self.color_set = list(color_set)
-        self.column_states = ColumnStateManager(self.cols)
 
         if board_layout is None:
             self.board = [[Cell() for _ in range(cols)] for _ in range(rows)]
@@ -16,9 +14,6 @@ class Board:
 
     def __str__(self):
         s = ""
-        for c in range(self.cols):
-            s += f"{self.column_states.states[c].name:>31}"
-        s += "\n"
         for r in range(self.rows):
             row = []
             for c in range(self.cols):
@@ -53,11 +48,6 @@ class Board:
     def can_swap(self, r1, c1, r2, c2) -> bool:
         try:
             if abs(r1 - r2) + abs(c1 - c2) != 1:
-                return False
-
-            if not self.column_states.can_interact(c1, r1):
-                return False
-            if not self.column_states.can_interact(c2, r2):
                 return False
 
             cell1 = self.get_board_element(r1, c1)

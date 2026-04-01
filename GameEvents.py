@@ -47,38 +47,6 @@ class SpecialTriggeredEvent:
 
 
 @dataclass(frozen=True)
-class ColumnStateChangedEvent:
-    column: int
-    old_state: Any
-    new_state: Any
-    reason: str | None = None
-
-
-@dataclass(frozen=True)
-class ColumnCellsReservedEvent:
-    column: int
-    rows: tuple[int, ...]
-    reason: str | None = None
-
-
-@dataclass(frozen=True)
-class ColumnCellsReleasedEvent:
-    column: int
-    rows: tuple[int, ...]
-    reason: str | None = None
-
-
-@dataclass(frozen=True)
-class ColumnFallingStartedEvent:
-    columns: tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class ColumnFallingStoppedEvent:
-    columns: tuple[int, ...]
-
-
-@dataclass(frozen=True)
 class OccupantMovedEvent:
     from_pos: tuple[int, int]
     to_pos: tuple[int, int]

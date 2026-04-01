@@ -15,9 +15,6 @@ class MatchDetectionLogic:
             c: int,
             get_cell_occupant_fn=None,
     ):
-        if not self.board.column_states.can_match(c, r):
-            return set()
-
         if get_cell_occupant_fn is None:
             get_cell_occupant_fn = self.board.get_occupant
 
@@ -36,7 +33,7 @@ class MatchDetectionLogic:
         horiz = [(r, c)]
 
         cc = c - 1
-        while self.board.can_cell_hold_occupant(r, cc) and self.board.column_states.can_match(cc, r):
+        while self.board.can_cell_hold_occupant(r, cc):
             b = get_cell_occupant_fn(r, cc)
             if (
                 not isinstance(b, Candy)
@@ -48,7 +45,7 @@ class MatchDetectionLogic:
             cc -= 1
 
         cc = c + 1
-        while self.board.can_cell_hold_occupant(r, cc) and self.board.column_states.can_match(cc, r):
+        while self.board.can_cell_hold_occupant(r, cc):
             b = get_cell_occupant_fn(r, cc)
             if (
                 not isinstance(b, Candy)
@@ -109,7 +106,6 @@ class MatchDetectionLogic:
                 # all positions must be valid
                 if not all(
                         self.board.can_cell_hold_occupant(rr, cc)
-                        and self.board.column_states.can_match(cc, rr)
                         for rr, cc in square_coords
                 ):
                     continue
@@ -141,9 +137,6 @@ class MatchDetectionLogic:
         for r in range(self.board.rows):
             for c in range(self.board.cols):
                 if (r, c) in visited:
-                    continue
-
-                if not self.board.column_states.can_match(c, r):
                     continue
 
                 if not self.board.can_cell_hold_occupant(r, c):
