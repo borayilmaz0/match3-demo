@@ -83,6 +83,10 @@ class Cell(BoardElement):
 
         return damage_given
 
+    def clear_occupant(self, pos=None) -> None:
+        if self.occupant is not None:
+            self._remove_entity(self.occupant, pos=pos, layer_name="occupant")
+
     def _remove_entity(self, entity, pos=None, layer_name=None) -> None:
         if entity is self.overlay:
             self.overlay = None

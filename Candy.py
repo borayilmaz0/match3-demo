@@ -1,6 +1,5 @@
 from abc import ABC
 
-from BasicMatchable import BasicMatchable
 from CandyType import CandyType
 from CellOccupant import CellOccupant
 from ColorType import ColorType
@@ -22,7 +21,6 @@ class Candy(CellOccupant, ABC):
         super().__init__()
         self.color = color
 
-        self.add_behavior(BasicMatchable())
         self.add_behavior(BasicSwappable())
         self.add_behavior(BasicCascading())
         self.add_behavior(BasicDamageReflecting())
@@ -65,6 +63,11 @@ class Candy(CellOccupant, ABC):
 
 class NormalCandy(Candy):
     candy_type = CandyType.NORMAL
+
+    def __init__(self, color: ColorType):
+        super().__init__(color)
+        from BasicMatchable import BasicMatchable
+        self.add_behavior(BasicMatchable())
 
     def is_special(self) -> bool:
         return False

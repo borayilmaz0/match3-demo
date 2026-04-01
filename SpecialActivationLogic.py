@@ -139,7 +139,7 @@ class SpecialActivationLogic:
         try:
             cell = self.board.get_board_element(*pos)
             if cell.occupant is candy:
-                cell.occupant = None
+                cell.clear_occupant(pos=pos)
 
             handler(pos, candy)
             return True
@@ -173,8 +173,7 @@ class SpecialActivationLogic:
             return
 
         cell = self.board.get_board_element(*pos)
-        if cell.occupant is not None:
-            cell.occupant = None
+        cell.clear_occupant(pos=pos)
 
     # ============================================================
     # IMPLEMENTATIONS (BASE SPECIALS)
