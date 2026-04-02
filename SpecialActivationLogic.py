@@ -139,7 +139,7 @@ class SpecialActivationLogic:
         try:
             cell = self.board.get_board_element(*pos)
             if cell.occupant is candy:
-                cell.occupant = None
+                cell.clear_occupant(pos=pos)
 
             handler(pos, candy)
             return True
@@ -173,8 +173,7 @@ class SpecialActivationLogic:
             return
 
         cell = self.board.get_board_element(*pos)
-        if cell.occupant is not None:
-            cell.occupant = None
+        cell.clear_occupant(pos=pos)
 
     # ============================================================
     # IMPLEMENTATIONS (BASE SPECIALS)
@@ -217,8 +216,11 @@ class SpecialActivationLogic:
                     continue
 
                 if cell.occupant.color == color:
-                    cell.apply_damage(
-                        DamageContext(DamageType.MATCH, color=color))
+                    self.damage_logic.apply_damage_at(
+                        (r, c),
+                        DamageContext(DamageType.MATCH, color=color),
+                        source="special-light-ball",
+                    )
 
         self._apply_enhanced_damage(pos[0], pos[1])
 

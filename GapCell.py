@@ -1,5 +1,4 @@
 from BoardElement import BoardElement
-from DamageContext import DamageContext
 
 
 class GapCell(BoardElement):
@@ -17,9 +16,6 @@ class GapCell(BoardElement):
 
     def can_swap(self) -> bool:
         return False
-
-    def apply_damage(self, ctx: DamageContext) -> None:
-        pass   # gaps are indestructible
 
     def set_event_bus(self, event_bus) -> None:
         pass   # gaps never emit events; accept the call silently

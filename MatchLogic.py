@@ -1,6 +1,5 @@
 # MatchLogic.py
-import random
-from Candy import Candy, LightBallCandy, BombCandy, RocketHCandy, PropellerCandy, RocketVCandy
+from Candy import Candy
 from CandyType import CandyType
 from MatchResult import MatchResult
 
@@ -62,27 +61,19 @@ class MatchLogic:
         # -----------------------------
 
         if max(h_len, v_len) >= 5:
-            spawn_candy = LightBallCandy(
-                pivot_candy.color,
-            )
+            spawn_candy = Candy(CandyType.LIGHT_BALL, pivot_candy.color)
 
         elif h_len >= 3 and v_len >= 3:
-            spawn_candy = BombCandy(
-                pivot_candy.color
-            )
+            spawn_candy = Candy(CandyType.BOMB, pivot_candy.color)
 
         elif max(h_len, v_len) == 4:
             if h_len == 4:
-                spawn_candy = RocketHCandy(
-                    pivot_candy.color)
+                spawn_candy = Candy(CandyType.ROCKET_H, pivot_candy.color)
             else:
-                spawn_candy = RocketVCandy(
-                    pivot_candy.color)
+                spawn_candy = Candy(CandyType.ROCKET_V, pivot_candy.color)
 
         elif size >= 4:
-            spawn_candy = PropellerCandy(
-                pivot_candy.color
-            )
+            spawn_candy = Candy(CandyType.PROPELLER, pivot_candy.color)
 
         # -----------------------------
         # Result
