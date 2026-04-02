@@ -1,9 +1,10 @@
+from Candy import Candy
+from CandyType import CandyType
 from Cell import Cell
 from GapCell import GapCell
 from Level import Level
 from ColorType import ColorType
 from ClearEntityObjective import ClearEntityObjective
-from Candy import *
 from Snow import Snow
 from Vines import Vines
 
@@ -47,14 +48,14 @@ class Level1(Level):
 
     def set_objectives(self):
         self.layout[0][0] = Cell(
-            occupant=RocketVCandy(ColorType.YELLOW),
+            occupant=Candy(CandyType.ROCKET_V, ColorType.YELLOW),
             overlay=Vines(),
             underlay=Snow(),
         )
 
-        self.layout[1][1] = Cell(occupant=LightBallCandy(ColorType.YELLOW),
+        self.layout[1][1] = Cell(occupant=Candy(CandyType.LIGHT_BALL, ColorType.YELLOW),
                                  underlay=Snow())
-        self.layout[1][2] = Cell(occupant=LightBallCandy(ColorType.YELLOW),
+        self.layout[1][2] = Cell(occupant=Candy(CandyType.LIGHT_BALL, ColorType.YELLOW),
                                  underlay=Snow())
 
         self.objectives = [

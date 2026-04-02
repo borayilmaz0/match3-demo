@@ -1,4 +1,5 @@
 from Cell import Cell
+from GameEvents import GameEvent, EntityClearedEvent
 from Objective import Objective
 
 
@@ -7,8 +8,8 @@ class ClearEntityObjective(Objective):
         self.entity_type = entity_type
         self.count = 0
 
-    def on_event(self, event):
-        if isinstance(event, self.entity_type):
+    def on_event(self, event: GameEvent):
+        if isinstance(event, EntityClearedEvent) and isinstance(event.entity, self.entity_type):
             self.count -= 1
 
     def is_completed(self) -> bool:

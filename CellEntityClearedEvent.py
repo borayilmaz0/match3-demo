@@ -1,13 +1,6 @@
-class CellEntityClearedEvent:
-    """
-    Emitted when a cell entity (overlay / occupant / underlay)
-    is fully destroyed and removed from the board.
-    """
+"""
+Backward-compatible alias for the canonical clear event type.
+Prefer importing EntityClearedEvent from GameEvents directly.
+"""
 
-    __slots__ = ("entity",)
-
-    def __init__(self, entity):
-        self.entity = entity
-
-    def __str__(self):
-        return f"{self.entity.__class__.__name__} cleared"
+from GameEvents import EntityClearedEvent as CellEntityClearedEvent

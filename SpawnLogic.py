@@ -1,5 +1,6 @@
 import random
-from Candy import NormalCandy, CandyFactory
+from Candy import Candy, CandyFactory
+from CandyType import CandyType
 from GameEvents import SpawnedEvent
 
 
@@ -34,7 +35,7 @@ class SpawnLogic:
 
     def spawn_random_candy(self):
         color = random.choice(self.board.color_set)
-        return NormalCandy(color)
+        return Candy(CandyType.NORMAL, color)
 
     def spawn_custom_candy(self, color, _type):
         return CandyFactory.create(_type, color)

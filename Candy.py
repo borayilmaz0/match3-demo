@@ -1,5 +1,3 @@
-from abc import ABC
-
 from CandyType import CandyType
 from CellOccupant import CellOccupant
 from ColorType import ColorType
@@ -7,18 +5,16 @@ from BasicSwappable import BasicSwappable
 from BasicDamageReflecting import BasicDamageReflecting
 from BasicCascading import BasicCascading
 from BasicDamageable import BasicDamageable
+from BasicMatchable import BasicMatchable
 from DamageType import DamageType
 
 
-class Candy(CellOccupant, ABC):
-    __slots__ = ("color",)
-    candy_type = None
+class Candy(CellOccupant):
+    __slots__ = ("candy_type", "color")
 
-    def __init__(self, color: ColorType):
-        if type(self) is Candy:
-            raise TypeError("Candy is abstract and cannot be instantiated directly")
-
+    def __init__(self, candy_type: CandyType, color: ColorType):
         super().__init__()
+        self.candy_type = candy_type
         self.color = color
 
         self.add_behavior(BasicSwappable())
@@ -31,88 +27,31 @@ class Candy(CellOccupant, ABC):
             )
         )
 
+        if candy_type == CandyType.NORMAL:
+            self.add_behavior(BasicMatchable())
+
     @property
     def type(self) -> CandyType:
-        if self.candy_type is None:
-            raise NotImplementedError(
-                f"{type(self).__name__} must define candy_type"
-            )
         return self.candy_type
 
     def is_special(self) -> bool:
-        raise NotImplementedError(
-            f"{type(self).__name__} must implement is_special()"
-        )
+        return self.candy_type != CandyType.NORMAL
 
     def is_normal(self) -> bool:
-        return not self.is_special()
-
-    def on_hit(self, special_logic, pos, ctx=None) -> bool:
-        return False
+        return self.candy_type == CandyType.NORMAL
 
     def __str__(self):
-        return f"{self.type.name}-{self.color.name}"
+        return f"{self.candy_type.name}-{self.color.name}"
 
     def __eq__(self, other):
         return (
             isinstance(other, Candy)
-            and type(self) is type(other)
+            and self.candy_type == other.candy_type
             and self.color == other.color
         )
-
-
-class NormalCandy(Candy):
-    candy_type = CandyType.NORMAL
-
-    def __init__(self, color: ColorType):
-        super().__init__(color)
-        from BasicMatchable import BasicMatchable
-        self.add_behavior(BasicMatchable())
-
-    def is_special(self) -> bool:
-        return False
-
-
-class SpecialCandy(Candy, ABC):
-    def is_special(self) -> bool:
-        return True
-
-    def on_hit(self, special_logic, pos, ctx=None) -> bool:
-        return special_logic.activate_on_hit(pos, self, ctx)
-
-
-class RocketHCandy(SpecialCandy):
-    candy_type = CandyType.ROCKET_H
-
-
-class RocketVCandy(SpecialCandy):
-    candy_type = CandyType.ROCKET_V
-
-
-class BombCandy(SpecialCandy):
-    candy_type = CandyType.BOMB
-
-
-class LightBallCandy(SpecialCandy):
-    candy_type = CandyType.LIGHT_BALL
-
-
-class PropellerCandy(SpecialCandy):
-    candy_type = CandyType.PROPELLER
 
 
 class CandyFactory:
     @staticmethod
     def create(candy_type: CandyType, color: ColorType) -> Candy:
-        mapping = {
-            CandyType.NORMAL: NormalCandy,
-            CandyType.ROCKET_H: RocketHCandy,
-            CandyType.ROCKET_V: RocketVCandy,
-            CandyType.BOMB: BombCandy,
-            CandyType.LIGHT_BALL: LightBallCandy,
-            CandyType.PROPELLER: PropellerCandy,
-        }
-        candy_cls = mapping.get(candy_type)
-        if candy_cls is None:
-            raise ValueError(f"Unsupported candy type: {candy_type}")
-        return candy_cls(color)
+        return Candy(candy_type, color)

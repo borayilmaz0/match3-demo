@@ -2,9 +2,6 @@ from BoardElement import BoardElement
 from CellOccupant import CellOccupant
 from CellOverlay import CellOverlay
 from CellUnderlay import CellUnderlay
-from DamageContext import DamageContext
-from DamageReflecting import DamageReflecting
-from Damageable import Damageable
 from GameEvents import EntityClearedEvent
 from MatchBlocking import MatchBlocking
 from Swappable import Swappable
@@ -57,43 +54,33 @@ class Cell(BoardElement):
 
         return True
 
-    def apply_damage(self, ctx: DamageContext, pos=None):
-        damage_given = False
+    def entities(self):
+        """Yields (layer_name, entity) in damage priority order."""
         for layer_name, entity in (
             ("overlay", self.overlay),
             ("occupant", self.occupant),
             ("underlay", self.underlay),
         ):
-            if not entity:
-                continue
-
-            dmg = entity.get(Damageable)
-            if not dmg or not dmg.can_take_damage(ctx):
-                continue
-
-            dmg.take_damage(ctx)
-            damage_given = True
-            reflector = entity.get(DamageReflecting)
-
-            if dmg.is_destroyed():
-                self._remove_entity(entity, pos=pos, layer_name=layer_name)
-
-            if not reflector or not reflector.can_reflect_damage():
-                break
-
-        return damage_given
+            if entity is not None:
+                yield layer_name, entity
 
     def clear_occupant(self, pos=None) -> None:
         if self.occupant is not None:
-            self._remove_entity(self.occupant, pos=pos, layer_name="occupant")
+            self.remove_entity(self.occupant, pos=pos, layer_name="occupant")
 
-    def _remove_entity(self, entity, pos=None, layer_name=None) -> None:
+    def remove_entity(self, entity, pos=None, layer_name=None) -> None:
         if entity is self.overlay:
             self.overlay = None
+            layer_name = layer_name or "overlay"
         elif entity is self.occupant:
             self.occupant = None
+            layer_name = layer_name or "occupant"
         elif entity is self.underlay:
             self.underlay = None
+            layer_name = layer_name or "underlay"
+        else:
+            # Unknown entity; do not emit a misleading "cleared" event.
+            return
 
         if self._event_bus is not None:
             self._event_bus.emit(

@@ -1,4 +1,6 @@
+from Damageable import Damageable
 from DamageContext import DamageContext
+from DamageReflecting import DamageReflecting
 from DamageType import DamageType
 from MatchResult import MatchResult
 from GameEvents import DamageRequestedEvent, DamageAppliedEvent, MatchResolvedEvent
@@ -25,7 +27,7 @@ class DamageResolutionLogic:
             )
 
         cell = self.board.get_board_element(r, c)
-        did_change = cell.apply_damage(ctx, pos=pos)
+        did_change, destroyed_layers = self._apply_damage_to_cell(cell, ctx, pos)
 
         if self.event_bus is not None:
             self.event_bus.emit(
@@ -33,11 +35,33 @@ class DamageResolutionLogic:
                     position=pos,
                     damage_type=ctx.damage_type,
                     color=ctx.color,
-                    did_change=bool(did_change),
-                    destroyed_layers=(),
+                    did_change=did_change,
+                    destroyed_layers=destroyed_layers,
                 )
             )
-        return True
+        return did_change
+
+    def _apply_damage_to_cell(self, cell, ctx: DamageContext, pos) -> tuple[bool, tuple[str, ...]]:
+        damage_given = False
+        destroyed_layers: list[str] = []
+
+        for layer_name, entity in cell.entities():
+            dmg = entity.get(Damageable)
+            if not dmg or not dmg.can_take_damage(ctx):
+                continue
+
+            dmg.take_damage(ctx)
+            damage_given = True
+            reflector = entity.get(DamageReflecting)
+
+            if dmg.is_destroyed():
+                cell.remove_entity(entity, pos=pos, layer_name=layer_name)
+                destroyed_layers.append(layer_name)
+
+            if not reflector or not reflector.can_reflect_damage():
+                break
+
+        return damage_given, tuple(destroyed_layers)
 
     def apply_match_result(self, match_result: MatchResult):
         match_cells = set(match_result.cells_to_remove)

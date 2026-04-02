@@ -216,8 +216,11 @@ class SpecialActivationLogic:
                     continue
 
                 if cell.occupant.color == color:
-                    cell.apply_damage(
-                        DamageContext(DamageType.MATCH, color=color))
+                    self.damage_logic.apply_damage_at(
+                        (r, c),
+                        DamageContext(DamageType.MATCH, color=color),
+                        source="special-light-ball",
+                    )
 
         self._apply_enhanced_damage(pos[0], pos[1])
 
