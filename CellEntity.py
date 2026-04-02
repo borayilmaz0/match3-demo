@@ -8,19 +8,14 @@ class CellEntity:
         self._behaviors = {}
 
     def add_behavior(self, behavior: Behavior):
-        self._behaviors[type(behavior)] = behavior
+        for cls in type(behavior).__mro__:
+            if cls is Behavior or cls is object:
+                continue
+            if issubclass(cls, Behavior):
+                self._behaviors[cls] = behavior
 
     def get(self, behavior_type):
-        # exact match first (fast path)
-        if behavior_type in self._behaviors:
-            return self._behaviors[behavior_type]
-
-        # fallback: find subclass
-        for behavior in self._behaviors.values():
-            if isinstance(behavior, behavior_type):
-                return behavior
-
-        return None
+        return self._behaviors.get(behavior_type)
 
     def has(self, behavior_type) -> bool:
         return behavior_type in self._behaviors

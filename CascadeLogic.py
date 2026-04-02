@@ -1,9 +1,11 @@
 from Cascading import Cascading
+from GameEvents import OccupantMovedEvent
 
 
 class CascadeLogic:
-    def __init__(self, board):
+    def __init__(self, board, event_bus=None):
         self.board = board
+        self.event_bus = event_bus
 
     def apply(self, columns=None) -> set[int]:
         if columns is None:
@@ -17,17 +19,6 @@ class CascadeLogic:
         return moved_columns
 
     def apply_column(self, col) -> bool:
-        """
-        Resolve gravity inside a single column.
-
-        The column is treated as independent vertical segments separated by
-        cells that cannot hold occupants (gaps).
-
-        Inside each segment:
-        - falling occupants compact downward,
-        - non-falling occupants stay fixed and behave like anchors,
-        - empty cells are left only at the top of each free interval.
-        """
         moved = False
 
         for segment_rows in self._iter_column_segments(col):
@@ -78,6 +69,10 @@ class CascadeLogic:
                 self.board.get_board_element(target_row, col).occupant = occ
                 cell.occupant = None
                 moved = True
+                if self.event_bus is not None:
+                    self.event_bus.emit(
+                        OccupantMovedEvent(from_pos=(r, col), to_pos=(target_row, col), entity=occ)
+                    )
 
             next_write_idx -= 1
 

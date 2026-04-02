@@ -11,7 +11,7 @@ class ObjectiveManager:
     def on_entity_cleared(self, event: EntityClearedEvent) -> None:
         """Called by the EventBus whenever a Cell removes an entity."""
         for obj in self.objectives:
-            obj.on_event(event.entity)
+            obj.on_event(event)
 
     def start(self, board):
         for obj in self.objectives:

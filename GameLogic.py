@@ -1,54 +1,190 @@
 from Candy import Candy
-from CandyType import CandyType
+from BoardResolutionPhase import BoardResolutionPhase
 from CascadeLogic import CascadeLogic
 from CascadePivotPolicy import CascadePivotPolicy
+from Cascading import Cascading
 from DamageResolutionLogic import DamageResolutionLogic
 from DeadlockDetectionLogic import DeadlockDetectionLogic
+from EffectQueue import EffectQueue, Effect
+from EventBus import EventBus
+from GameEvents import (
+    BoardPhaseChangedEvent,
+    BoardBecameStableEvent,
+    SpecialTriggeredEvent,
+)
 from MatchDetectionLogic import MatchDetectionLogic
 from MatchLogic import MatchLogic
 from SpawnLogic import SpawnLogic
 from SpecialActivationLogic import SpecialActivationLogic
 from SwapPivotPolicy import SwapPivotPolicy
-from Cascading import Cascading
 
 
-class ColumnStateController:
-
-    def __init__(self, board):
+class BoardResolver:
+    def __init__(self, board, event_bus=None, blocking_mode=True):
         self.board = board
+        self.event_bus = event_bus or EventBus()
+        self.phase = BoardResolutionPhase.IDLE
+        self.blocking_mode = blocking_mode
+        self.effect_queue = EffectQueue()
 
-    def lock_positions(self, positions):
-        self.board.column_states.lock_many(c for _, c in positions)
+        self.md_logic = MatchDetectionLogic(board)
+        self.match_logic = MatchLogic(board)
+        self.cascade_logic = CascadeLogic(board, event_bus=self.event_bus)
+        self.damage_logic = DamageResolutionLogic(board, event_bus=self.event_bus)
+        self.spawn_logic = SpawnLogic(board, event_bus=self.event_bus)
+        self.special_logic = SpecialActivationLogic(board, self.damage_logic)
 
-    def transition_locked_to_falling(self):
-        falling = set()
-        for c in range(self.board.cols):
-            if not self.board.column_states.is_locked(c):
+    def set_blocking_mode(self, blocking_mode: bool):
+        self.blocking_mode = blocking_mode
+
+    def is_accepting_input(self):
+        return self.phase in (BoardResolutionPhase.IDLE, BoardResolutionPhase.STABLE)
+
+    def try_swap(self, r1, c1, r2, c2):
+        if not self.is_accepting_input():
+            return False
+
+        if not self.board.can_swap(r1, c1, r2, c2):
+            return False
+
+        self._set_phase(BoardResolutionPhase.RESOLVING_INPUT)
+
+        pivots = [(r1, c1), (r2, c2)]
+        swap_policy = SwapPivotPolicy(pivots)
+
+        pending_match_results = []
+        pending_special_activations = []
+
+        candy_a = self.board.get_occupant(r1, c1)
+        candy_b = self.board.get_occupant(r2, c2)
+
+        combo_handled = False
+        if self.special_logic.can_activate_combo_on_swap(candy_a, candy_b):
+            combo_handled = self.special_logic.activate_combo_on_swap(
+                (r1, c1), (r2, c2), candy_a, candy_b
+            )
+            if combo_handled:
+                pending_special_activations.append(True)
+
+        if not combo_handled:
+            self._swap(r1, c1, r2, c2)
+
+        for pos in pivots:
+            if combo_handled:
                 continue
-            if self._column_needs_fall(c):
-                falling.add(c)
 
-        self.board.column_states.start_falling_many(falling)
-        return falling
+            r, c = pos
+            candy = self.board.get_occupant(r, c)
 
-    def transition_falling_to_locked(self, columns):
-        self.board.column_states.lock_many(columns)
+            match = self.md_logic.collect_matches_at(r, c)
+            if match:
+                pivot = swap_policy.choose_pivot(match)
+                result = self.match_logic.find_best_match(match, pivot)
+                if result:
+                    pending_match_results.append(result)
 
-    def settle_locked_columns(self):
-        settled = set()
+            if isinstance(candy, Candy) and candy.is_special():
+                neighbor = self.board.get_occupant(r2, c2) if pos == (r1, c1) else self.board.get_occupant(r1, c1)
+                activated = self.special_logic.activate_on_swap(pos, candy, neighbor)
+                if activated:
+                    pending_special_activations.append(True)
+                    self.event_bus.emit(
+                        SpecialTriggeredEvent(position=pos, candy_type=candy.type, trigger="swap")
+                    )
+
+        if not pending_match_results and not pending_special_activations:
+            self._swap(r1, c1, r2, c2)
+            self._set_phase(BoardResolutionPhase.STABLE)
+            return False
+
+        for result in pending_match_results:
+            self.effect_queue.push(Effect(kind="apply_match_result", payload={"result": result}))
+
+        return self._finish_resolution_request()
+
+    def try_tap(self, r, c):
+        if not self.is_accepting_input():
+            return False
+
+        candy = self.board.get_occupant(r, c)
+        if not isinstance(candy, Candy) or candy.is_normal():
+            return False
+
+        self._set_phase(BoardResolutionPhase.RESOLVING_INPUT)
+        activated = self.special_logic.activate_on_hit((r, c), candy)
+        if not activated:
+            self._set_phase(BoardResolutionPhase.STABLE)
+            return False
+
+        self.event_bus.emit(
+            SpecialTriggeredEvent(position=(r, c), candy_type=candy.type, trigger="tap")
+        )
+        return self._finish_resolution_request()
+
+    def _finish_resolution_request(self):
+        if self.blocking_mode:
+            self.resolve_until_stable()
+        return True
+
+    def resolve_until_stable(self):
+        while self.resolve_next_step():
+            pass
+
+    def resolve_next_step(self):
+        self._set_phase(BoardResolutionPhase.RESOLVING_EFFECTS)
+
+        effect = self.effect_queue.pop_next()
+        if effect is not None:
+            self._apply_effect(effect)
+            return True
+
+        falling_cols = self._find_columns_needing_fall()
+
+        moved = False
+        spawned = False
+
+        if falling_cols:
+            self._set_phase(BoardResolutionPhase.FALLING)
+            moved_columns = self.cascade_logic.apply(falling_cols)
+            moved = bool(moved_columns)
+
+        self._set_phase(BoardResolutionPhase.SPAWNING)
+        spawned = self.spawn_logic.apply()
+
+        if moved or spawned:
+            return True
+
+        self._set_phase(BoardResolutionPhase.MATCHING)
+        all_matches = self.md_logic.collect_all_matches()
+        if all_matches:
+            policy = CascadePivotPolicy()
+            match_results = self.match_logic.resolve_matches(all_matches, policy)
+
+            for result in match_results:
+                self.effect_queue.push(Effect(kind="apply_match_result", payload={"result": result}))
+            return True
+
+        self._set_phase(BoardResolutionPhase.STABLE)
+        self.event_bus.emit(BoardBecameStableEvent())
+        return False
+
+    def _apply_effect(self, effect):
+        if effect.kind == "apply_match_result":
+            result = effect.payload["result"]
+            self.damage_logic.apply_match_result(result)
+
+            if result.spawn_candy:
+                self.board.get_board_element(*result.spawn_pos).occupant = self.spawn_logic.spawn_custom_candy(
+                    result.spawn_candy.color,
+                    result.spawn_candy.type,
+                )
+
+    def _find_columns_needing_fall(self):
+        columns = set()
         for c in range(self.board.cols):
-            if self.board.column_states.is_locked(
-                    c) and not self._column_needs_fall(c):
-                settled.add(c)
-
-        self.board.column_states.set_steady_many(settled)
-        return settled
-
-    def unlock_all(self):
-        self.board.column_states.set_steady_many(range(self.board.cols))
-
-    def unlock_many(self, cols):
-        self.board.column_states.set_steady_many(cols)
+            if self._column_needs_fall(c):
+                columns.add(c)
+        return columns
 
     def _column_needs_fall(self, c):
         seen_empty = False
@@ -69,154 +205,11 @@ class ColumnStateController:
 
         return False
 
-
-class BoardResolver:
-
-    def __init__(self, board):
-        self.board = board
-        self.md_logic = MatchDetectionLogic(board)
-        self.match_logic = MatchLogic(board)
-        self.cascade_logic = CascadeLogic(board)
-        self.column_states = ColumnStateController(board)
-        self.damage_logic = DamageResolutionLogic(board)
-        self.spawn_logic = SpawnLogic(board)
-        self.special_logic = SpecialActivationLogic(board, self.damage_logic)
-
-    def try_swap(self, r1, c1, r2, c2):
-        if not self.board.can_swap(r1, c1, r2, c2):
-            return False
-
-        pivots = [(r1, c1), (r2, c2)]
-        swap_policy = SwapPivotPolicy(pivots)
-
-        pending_match_results = []
-        pending_special_activations = []
-
-        candy_a = self.board.get_occupant(r1, c1)
-        candy_b = self.board.get_occupant(r2, c2)
-
-        combo_handled = False
-        if self.special_logic.can_activate_combo_on_swap(candy_a, candy_b):
-            combo_handled = self.special_logic.activate_combo_on_swap(
-                (r1, c1), (r2, c2), candy_a, candy_b)
-            print("after combo:\n", self.board)
-            if combo_handled:
-                pending_special_activations.append(True)
-
-        if combo_handled:
-            impacted = self.special_logic.consume_impacted_columns()
-            self.column_states.lock_positions([(0, c) for c in impacted])
-            pending_special_activations.append(True)
-        if not combo_handled:
-            self._swap(r1, c1, r2, c2)
-            print("after swap:\n", self.board)
-
-        for pos in pivots:
-            if combo_handled:
-                continue
-
-            r, c = pos
-            candy = self.board.get_occupant(r, c)
-
-            match = self.md_logic.collect_matches_at(r, c)
-            if match:
-                pivot = swap_policy.choose_pivot(match)
-                result = self.match_logic.find_best_match(match, pivot)
-                if result:
-                    pending_match_results.append(result)
-
-            if isinstance(candy, Candy) and candy.is_special():
-                neighbor = self.board.get_occupant(r2, c2) if pos == (
-                    r1, c1) else self.board.get_occupant(r1, c1)
-                activated = self.special_logic.activate_on_swap(
-                    pos, candy, neighbor)
-                if activated:
-                    pending_special_activations.append(True)
-
-        if not pending_match_results and not pending_special_activations:
-            self._swap(r1, c1, r2, c2)
-            print("after swap back:\n", self.board)
-            self.column_states.unlock_many([c1, c2])
-            return False
-
-        # now swap is actually valid, so we can lock
-        self.column_states.lock_positions(pivots)
-
-        for result in pending_match_results:
-            self.damage_logic.apply_match_result(result)
-            if result.spawn_candy:
-                self.board.get_board_element(
-                    *result.spawn_pos
-                ).occupant = self.spawn_logic.spawn_custom_candy(
-                    result.spawn_candy.color,
-                    result.spawn_candy.type,
-                )
-                self.column_states.lock_positions([result.spawn_pos])
-        print("after swap and pop:\n", self.board)
-        self.resolve_until_stable()
-        return True
-
-    def try_tap(self, r, c):
-        if not self.board.column_states.can_interact(c):
-            return False
-
-        candy = self.board.get_occupant(r, c)
-        if not isinstance(candy, Candy) or candy.is_normal():
-            return False
-
-        self.column_states.lock_positions([(r, c)])
-        activated = self.special_logic.activate_on_hit((r, c), candy)
-        if not activated:
-            self.column_states.unlock_all()
-            return False
-        print("after swap:\n", self.board)
-        self.resolve_until_stable()
-        return True
-
-    def resolve_until_stable(self):
-        while True:
-            falling = self.column_states.transition_locked_to_falling()
-
-            moved = False
-            spawned = False
-
-            if falling:
-                moved_columns = self.cascade_logic.apply(falling)
-                moved = bool(moved_columns)
-                self.column_states.transition_falling_to_locked(falling)
-
-            # Important:
-            # even if no column is "falling", a locked column may still contain
-            # empty spawnable cells (e.g. fully cleared top cells / fully empty column).
-            if self.board.column_states.any_locked():
-                spawned = self.spawn_logic.apply()
-
-            if moved or spawned:
-                continue
-
-            all_matches = self.md_logic.collect_all_matches()
-            if all_matches:
-                policy = CascadePivotPolicy()
-                match_results = self.match_logic.resolve_matches(
-                    all_matches, policy)
-
-                for result in match_results:
-                    self.column_states.lock_positions(result.cells_to_remove)
-                    self.damage_logic.apply_match_result(result)
-
-                    if result.spawn_candy:
-                        self.board.get_board_element(
-                            *result.spawn_pos).occupant = result.spawn_candy
-                        self.column_states.lock_positions([result.spawn_pos])
-                    print("after resolve iteration:\n", self.board)
-                continue
-
-            self.column_states.settle_locked_columns()
-
-            print("after resolve iteration:\n", self.board)
-            if not self.board.column_states.any_locked(
-            ) and not self.board.column_states.any_falling():
-                break
+    def _set_phase(self, new_phase):
+        old_phase = self.phase
+        self.phase = new_phase
+        if self.event_bus is not None and old_phase != new_phase:
+            self.event_bus.emit(BoardPhaseChangedEvent(old_phase=old_phase.name, new_phase=new_phase.name))
 
     def _swap(self, r1, c1, r2, c2) -> bool:
         if not self.board.can_swap(r1, c1, r2, c2):
@@ -229,10 +222,10 @@ class BoardResolver:
 
 
 class GameLogic:
-
-    def __init__(self, board):
+    def __init__(self, board, event_bus=None, blocking_mode=True):
         self.board = board
-        self.board_resolver = BoardResolver(board)
+        self.event_bus = event_bus or EventBus()
+        self.board_resolver = BoardResolver(board, event_bus=self.event_bus, blocking_mode=blocking_mode)
         self.deadlock_logic = DeadlockDetectionLogic(board)
 
     def try_swap(self, r1, c1, r2, c2):
@@ -240,3 +233,9 @@ class GameLogic:
 
     def tap(self, r, c):
         return self.board_resolver.try_tap(r, c)
+
+    def resolve_next_step(self):
+        return self.board_resolver.resolve_next_step()
+
+    def resolve_until_stable(self):
+        self.board_resolver.resolve_until_stable()

@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 
+from GameEvents import GameEvent
+
 
 class Objective(ABC):
     @abstractmethod
-    def on_event(self, event):
+    def on_event(self, event: GameEvent):
         pass
 
     @abstractmethod

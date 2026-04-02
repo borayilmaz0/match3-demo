@@ -1,5 +1,4 @@
-from Candy import Candy
-from CandyType import CandyType
+from Matchable import Matchable
 from MatchDetectionLogic import MatchDetectionLogic
 
 
@@ -32,12 +31,13 @@ class DeadlockDetectionLogic:
         a = self.board.get_occupant(r1, c1)
         b = self.board.get_occupant(r2, c2)
 
+        matchable_a = a.get(Matchable) if a else None
+        matchable_b = b.get(Matchable) if b else None
+
         if (
-                not isinstance(a, Candy)
-                or not isinstance(b, Candy)
-                or not a.is_normal()
-                or not b.is_normal()
-                or a == b
+                not matchable_a or not matchable_a.can_be_matched()
+                or not matchable_b or not matchable_b.can_be_matched()
+                or a.color == b.color
         ):
             return False
 

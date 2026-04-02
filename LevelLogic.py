@@ -10,7 +10,10 @@ class LevelLogic:
     def __init__(self, level_designer: LevelDesigner):
         self.level_designer = level_designer
         self.board_designer = self.level_designer.board_designer
-        self.game_logic = GameLogic(self.board_designer.board)
+        self.game_logic = GameLogic(
+            self.board_designer.board,
+            event_bus=self.level_designer.event_bus,
+        )
 
     def start_game(self):
         self.level_designer.set_objectives()
